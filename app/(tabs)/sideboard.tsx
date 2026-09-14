@@ -717,16 +717,20 @@ export default function SideboardScreen() {
                             <PortraitCardCell
                               name={cell.label}
                               imageUrl={cell.imageUrl}
-                              selected={inSb}
+                              dimmed={inSb}
                               onPress={() => {
                                 void addFromMain(cell.entryName);
                               }}
-                              accessibilityLabel={`Add ${cell.label} to sideboard`}
+                              accessibilityLabel={
+                                inSb
+                                  ? `${cell.label} already in sideboard`
+                                  : `Add ${cell.label} to sideboard`
+                              }
                             />
                           </View>
                         );
                       })}
-                    {/* Pad short last row so cell widths stay even */}
+                    {/* Pad short last row — idle empty = hairline dashed, no accent */}
                     {mainGridCells.slice(row * 8, row * 8 + 8).length < 8
                       ? Array.from({
                           length:
@@ -737,7 +741,9 @@ export default function SideboardScreen() {
                           <View
                             key={`pad-${row}-${pad}`}
                             style={styles.gridFlex}
-                          />
+                          >
+                            <PortraitCardCell empty />
+                          </View>
                         ))
                       : null}
                   </View>

@@ -14,7 +14,8 @@ import { makeMonogram } from './CardArt';
 /**
  * Style A portrait grid cell (2:3) — sideboard 5×2 / main 8-col.
  * Filled: cover art, or name monogram, or quiet pulse while unresolved.
- * Empty: dashed + muted +. Press ring: 2px accent. No slot numbers.
+ * Empty idle: hairline dashed + muted +. Accent ring (#A78BFA) only on
+ * press or explicit selection — never on idle empty cells.
  * Soft QA P0: never show raw collector numbers (166, 214…) as hero text.
  */
 export function PortraitCardCell({
@@ -22,6 +23,7 @@ export function PortraitCardCell({
   imageUrl,
   empty,
   selected,
+  dimmed,
   onPress,
   accessibilityLabel,
 }: {
@@ -30,6 +32,8 @@ export function PortraitCardCell({
   imageUrl?: string | null;
   empty?: boolean;
   selected?: boolean;
+  /** Soft mute (e.g. main card already in sideboard) — no accent ring. */
+  dimmed?: boolean;
   onPress?: () => void;
   accessibilityLabel?: string;
 }) {
@@ -72,12 +76,13 @@ export function PortraitCardCell({
     return () => loop.stop();
   }, [showPulse, pulse]);
 
-  const body = (
+  const body = (accent: boolean) => (
     <View
       style={[
         styles.cell,
         filled ? styles.filled : styles.empty,
-        selected && styles.selected,
+        accent && styles.accentRing,
+        dimmed && !accent && styles.dimmed,
       ]}
     >
       {filled ? (
@@ -106,7 +111,7 @@ export function PortraitCardCell({
     </View>
   );
 
-  if (!onPress) return body;
+  if (!onPress) return body(Boolean(selected));
 
   return (
     <Pressable
@@ -116,9 +121,9 @@ export function PortraitCardCell({
         accessibilityLabel ||
         (filled ? `Remove ${name}` : 'Empty sideboard slot')
       }
-      style={({ pressed }) => [styles.hit, pressed && styles.pressed]}
+      style={styles.hit}
     >
-      {body}
+      {({ pressed }) => body(Boolean(selected || pressed))}
     </Pressable>
   );
 }
@@ -127,31 +132,34 @@ const styles = StyleSheet.create({
   hit: {
     flex: 1,
   },
-  pressed: {
-    opacity: 0.9,
-  },
   cell: {
     width: '100%',
     aspectRatio: 2 / 3,
     borderRadius: 6,
     overflow: 'hidden',
     backgroundColor: colors.elevated,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.hairline,
     alignItems: 'center',
     justifyContent: 'center',
   },
   filled: {
     borderStyle: 'solid',
+    borderWidth: 1,
   },
   empty: {
     backgroundColor: 'transparent',
     borderStyle: 'dashed',
+    borderWidth: 1,
   },
-  selected: {
+  /** Press / explicit selection only — never idle empty. */
+  accentRing: {
     borderWidth: 2,
     borderColor: colors.accent,
     borderStyle: 'solid',
+  },
+  dimmed: {
+    opacity: 0.45,
   },
   img: {
     ...StyleSheet.absoluteFill,
