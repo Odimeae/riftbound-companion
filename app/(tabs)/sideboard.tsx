@@ -1,27 +1,29 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { showAlert } from '../../src/utils/alert';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMatches } from '../../src/context/MatchContext';
 import { useSideboard } from '../../src/context/SideboardContext';
-import { FieldLabel } from '../../src/components/Field';
+import { useDecks } from '../../src/context/DeckContext';
+import { FieldLabel, TextField } from '../../src/components/Field';
 import { CardPicker } from '../../src/components/CardPicker';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { EmptyState } from '../../src/components/EmptyState';
 import { SlotTile } from '../../src/components/SlotTile';
 import { SectionLabel } from '../../src/components/SectionLabel';
 import { Chip } from '../../src/components/Chip';
+import { DeckCardRow } from '../../src/components/DeckCardRow';
 import { colors } from '../../src/theme/colors';
-import { spacing } from '../../src/theme/spacing';
+import { spacing, stickyFormContentInset } from '../../src/theme/spacing';
 import { typography } from '../../src/theme/typography';
 import {
   SIDEBOARD_MAX,
@@ -29,6 +31,14 @@ import {
   planTitle,
 } from '../../src/types/sideboard';
 import { deckLookupKey, normalizeDeckName } from '../../src/utils/deckName';
+import {
+  countNamedEntries,
+  deckNeedsNameEnrich,
+  mainCardCount,
+  paCdnArtUrl,
+  remapSlotLabels,
+} from '../../src/utils/piltoverImport';
+import { isFuzzyMatch } from '../../src/utils/cardResolve';
 
 export default function SideboardScreen() {
   const router = useRouter();
@@ -42,6 +52,12 @@ export default function SideboardScreen() {
     upsertSideboardCards,
     plansForDeck,
   } = useSideboard();
+  const {
+    decks: companionDecks,
+    getDeckForName,
+    importFromPiltover,
+    refreshFromPiltover,
+  } = useDecks();
 
   // Quiet header — no gear / no nav title
   useFocusEffect(
@@ -50,21 +66,30 @@ export default function SideboardScreen() {
     }, [navigation]),
   );
 
-  // Unique exact deck names from matches (one chip per canonical name).
+  // Unique exact deck names from matches + sideboards + PA imports.
   const deckSuggestions = useMemo(() => {
     const set = new Map<string, string>();
-    for (const m of matches) {
-      const name = normalizeDeckName(m.ownDeck);
+    const push = (raw: string) => {
+      const name = normalizeDeckName(raw);
       if (name) set.set(deckLookupKey(name), name);
-    }
+    };
+    for (const m of matches) push(m.ownDeck);
+    for (const sb of sideboards) push(sb.deckName);
+    for (const d of companionDecks) push(d.deckName);
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
-  }, [matches]);
+  }, [matches, sideboards, companionDecks]);
 
   const [deckName, setDeckName] = useState('Miracle Kennen');
   const [cards, setCards] = useState<string[]>([]);
   const [pickerValue, setPickerValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [importInput, setImportInput] = useState('');
+  const [importName, setImportName] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [refreshingDeck, setRefreshingDeck] = useState(false);
+  const [autoEnriching, setAutoEnriching] = useState(false);
+  const autoEnrichKeyRef = React.useRef<string>('');
 
   /** Known SB / IN card names for anti-typing picker. */
   const knownSbCards = useMemo(() => {
@@ -131,7 +156,7 @@ export default function SideboardScreen() {
     const name = normalizeDeckName(raw);
     if (!name || name.length < 2) return;
     if (atMax) {
-      Alert.alert('Sideboard full', `Maximum ${SIDEBOARD_MAX} cards.`);
+      showAlert('Sideboard full', `Maximum ${SIDEBOARD_MAX} cards.`);
       return;
     }
     if (cards.some((c) => deckLookupKey(c) === deckLookupKey(name))) {
@@ -163,7 +188,7 @@ export default function SideboardScreen() {
   const onSaveSideboard = async () => {
     const canonical = normalizeDeckName(deckName);
     if (!canonical) {
-      Alert.alert('Deck name required', 'Select a deck before saving.');
+      showAlert('Deck name required', 'Select a deck before saving.');
       return;
     }
     setDeckName(canonical);
@@ -172,6 +197,168 @@ export default function SideboardScreen() {
       await upsertSideboardCards(canonical, cards);
     } finally {
       setSaving(false);
+    }
+  };
+
+
+  const linkedDeck = getDeckForName(deckName);
+
+  // Auto-enrich PA names when list is still mostly codes (no manual Refresh needed).
+  useEffect(() => {
+    const deck = linkedDeck;
+    if (!deck?.piltoverUrl && !deck?.deckCode) return;
+    if (!deckNeedsNameEnrich(deck.mainCards)) return;
+    if (refreshingDeck || importing || autoEnriching) return;
+    const key = `${deck.id}:${deck.deckCode || deck.piltoverUrl || ''}`;
+    if (autoEnrichKeyRef.current === key) return;
+    autoEnrichKeyRef.current = key;
+    let cancelled = false;
+    (async () => {
+      setAutoEnriching(true);
+      try {
+        const result = await refreshFromPiltover(
+          deck.deckName,
+          knownNamesForImport,
+        );
+        if (cancelled) return;
+        const remapped = remapSlotLabels(cards, [
+          ...result.deck.sideboardCards,
+          ...result.deck.mainCards,
+        ]);
+        if (remapped.some((v, i) => v !== cards[i])) {
+          setCards(remapped);
+          await upsertSideboardCards(result.deck.deckName, remapped);
+        }
+      } catch {
+        // Allow retry next focus if fetch failed
+        autoEnrichKeyRef.current = '';
+      } finally {
+        if (!cancelled) setAutoEnriching(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedDeck?.id, linkedDeck?.updatedAt, linkedDeck?.deckCode, linkedDeck?.piltoverUrl]);
+
+  // Keep import name field in sync with selected deck chip unless user typed.
+  useEffect(() => {
+    setImportName((prev) => {
+      const selected = normalizeDeckName(deckName);
+      if (!prev.trim()) return selected;
+      // If previous matched prior selection patterns, follow chip.
+      return selected;
+    });
+  }, [deckName]);
+
+  const knownNamesForImport = useMemo(() => {
+    const names = [...knownSbCards, ...cards];
+    if (linkedDeck) {
+      for (const c of linkedDeck.mainCards) names.push(c.name);
+      for (const c of linkedDeck.sideboardCards) names.push(c.name);
+    }
+    return names;
+  }, [knownSbCards, cards, linkedDeck]);
+
+  const applySideboardFromImport = async (
+    slotNames: string[],
+    forDeck?: string,
+  ) => {
+    if (!slotNames.length) return;
+    const canonical =
+      normalizeDeckName(forDeck || '') ||
+      normalizeDeckName(deckName) ||
+      normalizeDeckName(importName);
+    if (!canonical) return;
+    setDeckName(canonical);
+    setCards(slotNames);
+    setSaving(true);
+    try {
+      await upsertSideboardCards(canonical, slotNames);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const onImportPiltover = async () => {
+    if (!importInput.trim()) {
+      showAlert(
+        'URL or code required',
+        'Paste a Piltover Archive deck URL or raw deck code.',
+      );
+      return;
+    }
+    // Prefer explicit Title Case field; blank → PA <title> via importer.
+    const name = normalizeDeckName(importName || deckName);
+    setImporting(true);
+    try {
+      const result = await importFromPiltover(
+        importInput.trim(),
+        name,
+        knownNamesForImport,
+      );
+      setDeckName(result.deck.deckName);
+      setImportName(result.deck.deckName);
+      const mainN = mainCardCount(result.deck.mainCards);
+      const sbN = mainCardCount(result.deck.sideboardCards);
+      showAlert(
+        'Imported',
+        `Linked “${result.deck.deckName}” — ${mainN} main · ${sbN} sideboard cards.\nFill sideboard slots from this import?`,
+        [
+          { text: 'Keep slots', style: 'cancel' },
+          {
+            text: 'Fill sideboard',
+            onPress: () => {
+              void applySideboardFromImport(result.sideboardSlotNames, result.deck.deckName);
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Import failed.';
+      showAlert('Import failed', msg);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const onRefreshPiltover = async () => {
+    const name = normalizeDeckName(deckName);
+    if (!name) return;
+    setRefreshingDeck(true);
+    try {
+      const result = await refreshFromPiltover(name, knownNamesForImport);
+      const mainN = mainCardCount(result.deck.mainCards);
+      const sbN = mainCardCount(result.deck.sideboardCards);
+      const { named, total } = countNamedEntries(result.deck.mainCards);
+      // Remap current slots codes → names without wiping custom picks
+      const remapped = remapSlotLabels(cards, [
+        ...result.deck.sideboardCards,
+        ...result.deck.mainCards,
+      ]);
+      if (remapped.some((v, i) => v !== cards[i])) {
+        setCards(remapped);
+        await upsertSideboardCards(result.deck.deckName, remapped);
+      }
+      showAlert(
+        'Refreshed',
+        `Updated “${result.deck.deckName}” — ${mainN} main · ${sbN} sideboard.\nNames resolved: ${named}/${total}.\nReplace sideboard slots from import?`,
+        [
+          { text: 'Keep slots', style: 'cancel' },
+          {
+            text: 'Fill sideboard',
+            onPress: () => {
+              void applySideboardFromImport(result.sideboardSlotNames, result.deck.deckName);
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Refresh failed.';
+      showAlert('Refresh failed', msg);
+    } finally {
+      setRefreshingDeck(false);
     }
   };
 
@@ -196,7 +383,7 @@ export default function SideboardScreen() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: 24 + spacing.hitTarget + insets.bottom },
+          { paddingBottom: stickyFormContentInset(insets.bottom, false) },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -231,6 +418,100 @@ export default function SideboardScreen() {
           )}
         </View>
 
+        {/* Piltover Archive — local deck list import (no account) */}
+        <View style={styles.block}>
+          <SectionLabel>Piltover Archive</SectionLabel>
+          <Text style={styles.hint}>
+            Paste a deck URL (/decks/view/… or deckbuilder?code=…) or a raw deck
+            code. Lists stay on this device — no Piltover login.
+          </Text>
+          <FieldLabel>Deck name</FieldLabel>
+          <TextField
+            value={importName}
+            onChangeText={setImportName}
+            placeholder="Title Case deck name"
+            autoCapitalize="words"
+          />
+          <View style={{ height: 10 }} />
+          <FieldLabel>URL or deck code</FieldLabel>
+          <TextField
+            value={importInput}
+            onChangeText={setImportInput}
+            placeholder="https://piltoverarchive.com/decks/view/… or code"
+            autoCapitalize="none"
+          />
+          <View style={styles.importActions}>
+            <PrimaryButton
+              label="Import from Piltover Archive"
+              onPress={() => {
+                void onImportPiltover();
+              }}
+              loading={importing}
+            />
+            {linkedDeck ? (
+              <PrimaryButton
+                label="Refresh"
+                onPress={() => {
+                  void onRefreshPiltover();
+                }}
+                loading={refreshingDeck}
+                variant="ghost"
+              />
+            ) : null}
+          </View>
+          {linkedDeck ? (
+            <Text style={styles.linkMeta}>
+              Linked · {mainCardCount(linkedDeck.mainCards)} main ·{' '}
+              {mainCardCount(linkedDeck.sideboardCards)} SB
+              {linkedDeck.updatedAt
+                ? ` · ${new Date(linkedDeck.updatedAt).toLocaleString()}`
+                : ''}
+              {autoEnriching ? ' · Resolving names…' : ''}
+              {!autoEnriching
+                ? (() => {
+                    const { named, total } = countNamedEntries(
+                      linkedDeck.mainCards,
+                    );
+                    return total
+                      ? ` · ${named}/${total} names`
+                      : '';
+                  })()
+                : ''}
+            </Text>
+          ) : (
+            <Text style={styles.hint}>
+              No list linked to this deck yet. Import to fill OUT pickers.
+            </Text>
+          )}
+        </View>
+
+        {linkedDeck && linkedDeck.mainCards.length > 0 ? (
+          <View style={styles.block}>
+            <SectionLabel>Main pool</SectionLabel>
+            <Text style={styles.hint}>
+              OUT pickers use this list. Art from Piltover CDN for now; Riot URI later.
+            </Text>
+            <View style={styles.mainList}>
+              {linkedDeck.mainCards.slice(0, 24).map((c) => (
+                <DeckCardRow
+                  key={`${c.code || c.name}-${c.id || ''}`}
+                  name={c.name}
+                  qty={c.qty}
+                  code={c.code}
+                  catalogId={c.id}
+                  imageUrl={c.imageUrl}
+                  fuzzy={isFuzzyMatch(c.code || c.name)}
+                />
+              ))}
+              {linkedDeck.mainCards.length > 24 ? (
+                <Text style={styles.hint}>
+                  +{linkedDeck.mainCards.length - 24} more
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
         {/* Matchup plans — e0 flat rows; New plan e1; Compare when linked */}
         <View style={styles.block}>
           <SectionLabel>Matchup plans</SectionLabel>
@@ -238,7 +519,7 @@ export default function SideboardScreen() {
           {plans.length === 0 ? (
             <EmptyState
               title="No plans yet"
-              message="Create a plan for a tough legend or archetype (e.g. vs control)."
+              message="Add a plan for a tough matchup."
               icon="git-compare-outline"
               ctaLabel="New plan"
               onPress={openNewPlan}
@@ -288,8 +569,7 @@ export default function SideboardScreen() {
                     .find((x) => x);
                   if (!linked) return null;
                   return (
-                    <PrimaryButton
-                      label="Compare"
+                    <Pressable
                       onPress={() =>
                         router.push({
                           pathname: '/match/compare',
@@ -300,8 +580,12 @@ export default function SideboardScreen() {
                           },
                         })
                       }
-                      variant="ghost"
-                    />
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      style={styles.compareLink}
+                    >
+                      <Text style={styles.compareLinkText}>Compare plan vs actual</Text>
+                    </Pressable>
                   );
                 })()}
               </View>
@@ -313,14 +597,31 @@ export default function SideboardScreen() {
         <View style={styles.block}>
           <SectionLabel>Slots</SectionLabel>
           <View style={styles.slots}>
-            {Array.from({ length: SIDEBOARD_MAX }).map((_, index) => (
+            {Array.from({ length: SIDEBOARD_MAX }).map((_, index) => {
+              const slotName = cards[index];
+              const fromList = slotName
+                ? [...(linkedDeck?.sideboardCards ?? []), ...(linkedDeck?.mainCards ?? [])].find(
+                    (c) =>
+                      deckLookupKey(c.name) === deckLookupKey(slotName) ||
+                      (c.code &&
+                        deckLookupKey(c.code) === deckLookupKey(slotName)),
+                  )
+                : undefined;
+              const slotArt =
+                fromList?.imageUrl ||
+                (fromList?.code ? paCdnArtUrl(fromList.code) : undefined) ||
+                (slotName ? paCdnArtUrl(slotName) : undefined);
+              return (
               <SlotTile
                 key={`slot-${index}`}
                 index={index}
-                name={cards[index]}
-                onClear={cards[index] ? () => removeCard(index) : undefined}
+                name={slotName}
+                imageUrl={slotArt}
+                fuzzy={slotName ? isFuzzyMatch(slotName) : false}
+                onClear={slotName ? () => removeCard(index) : undefined}
               />
-            ))}
+            );
+            })}
           </View>
         </View>
 
@@ -339,8 +640,8 @@ export default function SideboardScreen() {
                 setPickerValue(name);
                 void addCardName(name);
               }}
-              placeholder="Card name"
-              emptyHint="No known cards yet — use Other…"
+              placeholder="Search cards"
+              emptyHint="No cards found"
             />
           )}
         </View>
@@ -369,7 +670,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: {
     padding: spacing.screenPad,
-    gap: spacing.blockGap,
+    gap: spacing.sectionGap,
   },
   center: {
     flex: 1,
@@ -402,10 +703,10 @@ const styles = StyleSheet.create({
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.chipGap,
   },
   slots: {
-    gap: 8,
+    gap: spacing.chipGap,
   },
   addBlock: {
     gap: 0,
@@ -434,9 +735,9 @@ const styles = StyleSheet.create({
   planRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.chipGap,
     minHeight: spacing.rowMinH,
-    paddingVertical: 12,
+    paddingVertical: spacing.rowPadV,
     paddingHorizontal: 0,
   },
   planRowDivider: {
@@ -452,8 +753,29 @@ const styles = StyleSheet.create({
     ...typography.meta,
     marginTop: 2,
   },
+  compareLink: {
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  compareLinkText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
   actions: {
-    gap: 8,
+    gap: spacing.chipGap,
+    marginTop: 4,
+  },
+  importActions: {
+    gap: spacing.chipGap,
+    marginTop: 12,
+  },
+  mainList: {
+    gap: 4,
+  },
+  linkMeta: {
+    color: colors.textMuted,
+    ...typography.meta,
     marginTop: 4,
   },
   footer: {

@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,17 +7,17 @@ import {
   Text,
   View,
 } from 'react-native';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMatches } from '../../src/context/MatchContext';
 import { useSideboard } from '../../src/context/SideboardContext';
+import { useDecks } from '../../src/context/DeckContext';
 import { SegmentedControl } from '../../src/components/SegmentedControl';
 import { TagPicker } from '../../src/components/TagPicker';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
+import { MatchDateTimeField } from '../../src/components/MatchDateTimeField';
 import { FieldLabel, SectionCard, TextField } from '../../src/components/Field';
+import { CollapseSection } from '../../src/components/CollapseSection';
 import { SwapPairEditor } from '../../src/components/SwapPairEditor';
 import { PlanFollowedChips } from '../../src/components/PlanFollowedChips';
 import { PlanActualDiff } from '../../src/components/PlanActualDiff';
@@ -27,7 +25,7 @@ import { LockBanner } from '../../src/components/LockBanner';
 import { SectionLabel } from '../../src/components/SectionLabel';
 import { Chip } from '../../src/components/Chip';
 import { colors } from '../../src/theme/colors';
-import { spacing } from '../../src/theme/spacing';
+import { spacing, stickyFormContentInset } from '../../src/theme/spacing';
 import { typography } from '../../src/theme/typography';
 import {
   EVENT_TYPES,
@@ -39,8 +37,8 @@ import {
   MatchOutcome,
   MistakeTag,
   emptyNote,
-  noteOneLiner,
 } from '../../src/types/match';
+
 import {
   PlanFollowed,
   SIDEBOARD_MAX,
@@ -51,11 +49,12 @@ import {
   planTitle,
 } from '../../src/types/sideboard';
 import { createId } from '../../src/utils/id';
+import { showAlert } from '../../src/utils/alert';
 import {
-  formatMatchDate,
   knownOutCardsFromMatches,
   knownOwnDecks,
   recentOpponentLegends,
+  recentOwnLegends,
 } from '../../src/utils/stats';
 import { deckLookupKey, normalizeDeckName } from '../../src/utils/deckName';
 import { planMatchesOpponent } from '../../src/utils/matchup';
@@ -112,19 +111,20 @@ export default function LogMatchScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { matches, getMatch, addMatch, updateMatch } = useMatches();
   const { plansForDeck, getPlan, getSideboardForDeck, sideboards } = useSideboard();
+  const { mainPoolForDeck } = useDecks();
   const existing = id ? getMatch(id) : undefined;
   const isEdit = Boolean(existing);
 
   const [date, setDate] = useState(new Date());
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
   const [eventType, setEventType] = useState<EventType>('Friendly');
   const [format, setFormat] = useState<MatchFormat>('Bo1');
   const [ownDeck, setOwnDeck] = useState('');
   const [ownDeckOther, setOwnDeckOther] = useState(false);
   const [ownLegend, setOwnLegend] = useState('');
+  const [ownLegendOther, setOwnLegendOther] = useState(false);
   const [opponentDeck, setOpponentDeck] = useState('');
   const [opponentLegend, setOpponentLegend] = useState('');
+  const [opponentLegendOther, setOpponentLegendOther] = useState(false);
   const [outcome, setOutcome] = useState<MatchOutcome>('Win');
   const [game1, setGame1] = useState<MatchOutcome>('Win');
   const [game2, setGame2] = useState<MatchOutcome>('Loss');
@@ -142,13 +142,21 @@ export default function LogMatchScreen() {
     enabled: false,
   });
   const [oneLiner, setOneLiner] = useState('');
+  const [wentWell, setWentWell] = useState('');
+  const [wentPoorly, setWentPoorly] = useState('');
+  const [nextTime, setNextTime] = useState('');
   const [mistakeTags, setMistakeTags] = useState<MistakeTag[]>([]);
   const [saving, setSaving] = useState(false);
-  const [legendTouched, setLegendTouched] = useState(false);
+  const [ownLegendTouched, setOwnLegendTouched] = useState(false);
+  const [oppLegendTouched, setOppLegendTouched] = useState(false);
   const [saveAttempted, setSaveAttempted] = useState(false);
 
-  const recentLegends = useMemo(
+  const recentOppLegends = useMemo(
     () => recentOpponentLegends(matches, 10),
+    [matches],
+  );
+  const recentMyLegends = useMemo(
+    () => recentOwnLegends(matches, 10),
     [matches],
   );
   const deckChips = useMemo(
@@ -168,8 +176,10 @@ export default function LogMatchScreen() {
     setOwnDeck(existing.ownDeck);
     setOwnDeckOther(false);
     setOwnLegend(existing.ownLegend);
+    setOwnLegendOther(false);
     setOpponentDeck(existing.opponentDeck);
     setOpponentLegend(existing.opponentLegend);
+    setOpponentLegendOther(false);
     setOutcome(existing.outcome);
     const g1 = existing.games.find((g) => g.gameNumber === 1);
     const g2 = existing.games.find((g) => g.gameNumber === 2);
@@ -189,7 +199,15 @@ export default function LogMatchScreen() {
       2: g2?.id,
       3: g3?.id,
     });
-    setOneLiner(noteOneLiner(existing.note));
+    // Notes one-liner stays separate from Reflect (do not seed from went*/nextTime).
+    setOneLiner(typeof existing.note.oneLiner === 'string' ? existing.note.oneLiner : '');
+    const poorly =
+      (existing.note.wentPoorly ?? '').trim() ||
+      (existing.note.mistakes ?? '').trim() ||
+      '';
+    setWentWell(existing.note.wentWell ?? '');
+    setWentPoorly(poorly);
+    setNextTime(existing.note.nextTime ?? '');
     setMistakeTags(existing.note.mistakeTags ?? []);
   }, [existing]);
 
@@ -207,6 +225,7 @@ export default function LogMatchScreen() {
 
   const mainDeckCards = useMemo(() => {
     const names: string[] = [];
+    names.push(...mainPoolForDeck(ownDeck));
     for (const plan of deckPlans) {
       for (const s of plan.swaps) {
         if (s.outCard?.trim()) names.push(s.outCard);
@@ -214,7 +233,7 @@ export default function LogMatchScreen() {
     }
     names.push(...knownOutCardsFromMatches(matches, ownDeck));
     return names;
-  }, [deckPlans, matches, ownDeck]);
+  }, [deckPlans, matches, ownDeck, mainPoolForDeck]);
 
   const games: GameResult[] = useMemo(() => {
     if (format !== 'Bo3') return [];
@@ -243,18 +262,6 @@ export default function LogMatchScreen() {
     return list;
   }, [format, game1, game2, game3, game3Enabled, gameIds, sb2, sb3]);
 
-  const onPickerChange = (event: DateTimePickerEvent, selected?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowPicker(false);
-    }
-    if (event.type === 'dismissed' || !selected) return;
-    setDate(selected);
-  };
-
-  const openPicker = (mode: 'date' | 'time') => {
-    setPickerMode(mode);
-    setShowPicker(true);
-  };
 
   const applyPlanToGame = (
     planId: string,
@@ -270,12 +277,17 @@ export default function LogMatchScreen() {
     });
   };
 
+  const ownLegendMissing = !ownLegend.trim();
   const oppLegendMissing = !opponentLegend.trim();
-  const showLegendNudge = oppLegendMissing && (legendTouched || saveAttempted);
-  const canSave = !oppLegendMissing;
+  const showOwnLegendNudge =
+    ownLegendMissing && (ownLegendTouched || saveAttempted);
+  const showOppLegendNudge =
+    oppLegendMissing && (oppLegendTouched || saveAttempted);
+  /** Designer: Save gated until both legends filled; decks optional */
+  const canSave = !ownLegendMissing && !oppLegendMissing;
 
   const onSave = async () => {
-    if (oppLegendMissing) {
+    if (ownLegendMissing || oppLegendMissing) {
       setSaveAttempted(true);
       return;
     }
@@ -292,7 +304,7 @@ export default function LogMatchScreen() {
           (!s.outCard.trim() && s.inCard.trim()),
       );
       if (incomplete) {
-        Alert.alert(
+        showAlert(
           'Incomplete swap',
           `${label}: each sideboard swap must be 1-for-1 (both OUT and IN).`,
         );
@@ -302,14 +314,14 @@ export default function LogMatchScreen() {
         (s) => isJunkCardName(s.outCard) || isJunkCardName(s.inCard),
       );
       if (junk) {
-        Alert.alert(
+        showAlert(
           'Card name too short',
           `${label}: card names need at least 2 characters.`,
         );
         return;
       }
       if (normalizeSwaps(state.actualSwaps).length > SIDEBOARD_MAX) {
-        Alert.alert('Too many swaps', `${label}: max ${SIDEBOARD_MAX} swaps.`);
+        showAlert('Too many swaps', `${label}: max ${SIDEBOARD_MAX} swaps.`);
         return;
       }
     }
@@ -329,6 +341,9 @@ export default function LogMatchScreen() {
         note: {
           ...emptyNote(),
           oneLiner: oneLiner.trim(),
+          wentWell: wentWell.trim(),
+          wentPoorly: wentPoorly.trim(),
+          nextTime: nextTime.trim(),
           mistakeTags,
         },
       };
@@ -353,16 +368,14 @@ export default function LogMatchScreen() {
     <View style={styles.screen}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: stickyFormContentInset(insets.bottom, true) },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <SectionCard title="Result">
-          <SegmentedControl
-            options={MATCH_OUTCOMES}
-            value={outcome}
-            onChange={setOutcome}
-          />
+        <SectionCard title="Match">
           <View>
             <FieldLabel>Type</FieldLabel>
             <SegmentedControl
@@ -371,38 +384,203 @@ export default function LogMatchScreen() {
               onChange={setEventType}
             />
           </View>
+          <MatchDateTimeField value={date} onChange={setDate} />
           <View>
-            <FieldLabel>Date & time</FieldLabel>
-            <View style={styles.dateRow}>
-              <Pressable style={styles.dateBtn} onPress={() => openPicker('date')}>
-                <Text style={styles.dateText}>{formatMatchDate(date.toISOString())}</Text>
-              </Pressable>
-              {Platform.OS === 'ios' ? (
-                <Pressable style={styles.dateBtn} onPress={() => openPicker('time')}>
-                  <Text style={styles.dateText}>Change time</Text>
-                </Pressable>
-              ) : null}
-            </View>
-            {showPicker ? (
-              <DateTimePicker
-                value={date}
-                mode={pickerMode}
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={onPickerChange}
-                themeVariant="dark"
-              />
-            ) : null}
-            {Platform.OS === 'ios' && showPicker ? (
-              <Pressable onPress={() => setShowPicker(false)} style={styles.donePicker}>
-                <Text style={styles.donePickerText}>Done</Text>
-              </Pressable>
+            <FieldLabel>Format</FieldLabel>
+            <SegmentedControl
+              options={MATCH_FORMATS}
+              value={format}
+              onChange={onFormatChange}
+            />
+            {format === 'Bo3' ? (
+              <View style={[styles.bo3Block, { marginTop: 12 }]}>
+                <SectionLabel>Games</SectionLabel>
+                <CompactGameRow label="G1" value={game1} onChange={setGame1} />
+                <LockBanner />
+                <CompactGameRow label="G2" value={game2} onChange={setGame2} />
+                <GameSideboardEditor
+                  label="Game 2"
+                  state={sb2}
+                  onChange={setSb2}
+                  plans={filteredPlans}
+                  onApplyPlan={(planId) => applyPlanToGame(planId, setSb2)}
+                  sideboardCards={sideboardCards}
+                  mainDeckCards={mainDeckCards}
+                />
+                <View style={styles.switchRow}>
+                  <Text style={styles.switchLabel}>Played Game 3</Text>
+                  <Switch
+                    value={game3Enabled}
+                    onValueChange={setGame3Enabled}
+                    trackColor={{ false: colors.hairline, true: colors.accentMuted }}
+                    thumbColor={game3Enabled ? colors.accent : '#f4f3f4'}
+                  />
+                </View>
+                {game3Enabled ? (
+                  <>
+                    <CompactGameRow label="G3" value={game3} onChange={setGame3} />
+                    <GameSideboardEditor
+                      label="Game 3"
+                      state={sb3}
+                      onChange={setSb3}
+                      plans={filteredPlans}
+                      onApplyPlan={(planId) => applyPlanToGame(planId, setSb3)}
+                      sideboardCards={sideboardCards}
+                      mainDeckCards={mainDeckCards}
+                    />
+                  </>
+                ) : null}
+              </View>
             ) : null}
           </View>
         </SectionCard>
 
-        <SectionCard title="Decks">
+        <SectionCard title="Result">
+          <SegmentedControl
+            options={MATCH_OUTCOMES}
+            value={outcome}
+            onChange={setOutcome}
+          />
+        </SectionCard>
+
+        <SectionCard title="Legends">
           <View>
-            <FieldLabel>Your deck</FieldLabel>
+            <FieldLabel>Your legend</FieldLabel>
+            {recentMyLegends.length > 0 ? (
+              <View style={styles.chipRow}>
+                {recentMyLegends.map((legend) => {
+                  const active =
+                    !ownLegendOther &&
+                    deckLookupKey(ownLegend) === deckLookupKey(legend);
+                  return (
+                    <Chip
+                      key={legend}
+                      label={legend}
+                      active={active}
+                      onPress={() => {
+                        setOwnLegend(legend);
+                        setOwnLegendOther(false);
+                      }}
+                    />
+                  );
+                })}
+                <Chip
+                  label="Other…"
+                  active={ownLegendOther}
+                  onPress={() => {
+                    setOwnLegendOther(true);
+                    if (
+                      recentMyLegends.some(
+                        (d) => deckLookupKey(d) === deckLookupKey(ownLegend),
+                      )
+                    ) {
+                      setOwnLegend('');
+                    }
+                  }}
+                />
+              </View>
+            ) : null}
+            {ownLegendOther ||
+            recentMyLegends.length === 0 ||
+            (Boolean(ownLegend) &&
+              !recentMyLegends.some(
+                (d) => deckLookupKey(d) === deckLookupKey(ownLegend),
+              )) ? (
+              <View style={{ marginTop: recentMyLegends.length ? 10 : 0 }}>
+                <TextField
+                  value={ownLegend}
+                  onChangeText={(t) => {
+                    setOwnLegend(t);
+                    setOwnLegendOther(true);
+                  }}
+                  placeholder="Required"
+                  invalid={showOwnLegendNudge}
+                  onBlur={() => {
+                    setOwnLegendTouched(true);
+                    setOwnLegend(normalizeDeckName(ownLegend));
+                  }}
+                />
+              </View>
+            ) : ownLegend ? (
+              <Text style={styles.selectedHint}>Selected: {ownLegend}</Text>
+            ) : (
+              <Text style={styles.selectedHint}>Pick a legend or Other…</Text>
+            )}
+            {showOwnLegendNudge ? (
+              <Text style={styles.fieldError}>Legend is required</Text>
+            ) : null}
+          </View>
+
+          <View>
+            <FieldLabel>Opponent legend</FieldLabel>
+            {recentOppLegends.length > 0 ? (
+              <View style={styles.chipRow}>
+                {recentOppLegends.map((legend) => {
+                  const active =
+                    !opponentLegendOther &&
+                    deckLookupKey(opponentLegend) === deckLookupKey(legend);
+                  return (
+                    <Chip
+                      key={legend}
+                      label={legend}
+                      active={active}
+                      onPress={() => {
+                        setOpponentLegend(legend);
+                        setOpponentLegendOther(false);
+                      }}
+                    />
+                  );
+                })}
+                <Chip
+                  label="Other…"
+                  active={opponentLegendOther}
+                  onPress={() => {
+                    setOpponentLegendOther(true);
+                    if (
+                      recentOppLegends.some(
+                        (d) =>
+                          deckLookupKey(d) === deckLookupKey(opponentLegend),
+                      )
+                    ) {
+                      setOpponentLegend('');
+                    }
+                  }}
+                />
+              </View>
+            ) : null}
+            {opponentLegendOther ||
+            recentOppLegends.length === 0 ||
+            (Boolean(opponentLegend) &&
+              !recentOppLegends.some(
+                (d) => deckLookupKey(d) === deckLookupKey(opponentLegend),
+              )) ? (
+              <View style={{ marginTop: recentOppLegends.length ? 10 : 0 }}>
+                <TextField
+                  value={opponentLegend}
+                  onChangeText={(t) => {
+                    setOpponentLegend(t);
+                    setOpponentLegendOther(true);
+                  }}
+                  placeholder="Required"
+                  invalid={showOppLegendNudge}
+                  onBlur={() => {
+                    setOppLegendTouched(true);
+                    setOpponentLegend(normalizeDeckName(opponentLegend));
+                  }}
+                />
+              </View>
+            ) : opponentLegend ? (
+              <Text style={styles.selectedHint}>Selected: {opponentLegend}</Text>
+            ) : (
+              <Text style={styles.selectedHint}>Pick a legend or Other…</Text>
+            )}
+            {showOppLegendNudge ? (
+              <Text style={styles.fieldError}>Legend is required</Text>
+            ) : null}
+          </View>
+
+          <View>
+            <Text style={styles.optionalLabel}>Your deck · optional</Text>
             {deckChips.length > 0 ? (
               <View style={styles.chipRow}>
                 {deckChips.map((deck) => {
@@ -450,7 +628,7 @@ export default function LogMatchScreen() {
                     setOwnDeck(t);
                     setOwnDeckOther(true);
                   }}
-                  placeholder="e.g. Miracle Kennen"
+                  placeholder="Optional — e.g. Miracle Kennen"
                   onBlur={() => setOwnDeck(normalizeDeckName(ownDeck))}
                 />
               </View>
@@ -460,106 +638,25 @@ export default function LogMatchScreen() {
               <Text style={styles.selectedHint}>Pick a deck or Other…</Text>
             )}
           </View>
+
           <View>
-            <FieldLabel>Your legend</FieldLabel>
-            <TextField value={ownLegend} onChangeText={setOwnLegend} placeholder="Optional" />
-          </View>
-          <View>
-            <FieldLabel>Opponent legend</FieldLabel>
-            {recentLegends.length > 0 ? (
-              <View style={styles.chipRow}>
-                {recentLegends.map((legend) => (
-                  <Chip
-                    key={legend}
-                    label={legend}
-                    active={
-                      deckLookupKey(opponentLegend) === deckLookupKey(legend)
-                    }
-                    onPress={() => setOpponentLegend(legend)}
-                  />
-                ))}
-              </View>
-            ) : null}
-            <View style={{ marginTop: recentLegends.length ? 10 : 0 }}>
-              <TextField
-                value={opponentLegend}
-                onChangeText={setOpponentLegend}
-                placeholder="e.g. Lillia"
-                invalid={showLegendNudge}
-                onBlur={() => {
-                  setLegendTouched(true);
-                  setOpponentLegend(normalizeDeckName(opponentLegend));
-                }}
-              />
-            </View>
-            {showLegendNudge ? (
-              <Text style={styles.fieldError}>Opponent legend is required</Text>
-            ) : null}
-          </View>
-          <View>
-            <FieldLabel>Opponent deck</FieldLabel>
+            <Text style={styles.optionalLabel}>Opponent deck · optional</Text>
             <TextField
               value={opponentDeck}
               onChangeText={setOpponentDeck}
               placeholder="Optional — e.g. Ornn Control"
+              onBlur={() =>
+                setOpponentDeck(normalizeDeckName(opponentDeck))
+              }
             />
           </View>
-        </SectionCard>
-
-        <SectionCard title="Format">
-          <SegmentedControl
-            options={MATCH_FORMATS}
-            value={format}
-            onChange={onFormatChange}
-          />
-
-          {format === 'Bo3' ? (
-            <View style={styles.bo3Block}>
-              <SectionLabel>Games</SectionLabel>
-              <CompactGameRow label="G1" value={game1} onChange={setGame1} />
-              <LockBanner />
-              <CompactGameRow label="G2" value={game2} onChange={setGame2} />
-              <GameSideboardEditor
-                label="Game 2"
-                state={sb2}
-                onChange={setSb2}
-                plans={filteredPlans}
-                onApplyPlan={(planId) => applyPlanToGame(planId, setSb2)}
-                sideboardCards={sideboardCards}
-                mainDeckCards={mainDeckCards}
-              />
-              <View style={styles.switchRow}>
-                <Text style={styles.switchLabel}>Played Game 3</Text>
-                <Switch
-                  value={game3Enabled}
-                  onValueChange={setGame3Enabled}
-                  trackColor={{ false: colors.hairline, true: colors.accentMuted }}
-                  thumbColor={game3Enabled ? colors.accent : '#f4f3f4'}
-                />
-              </View>
-              {game3Enabled ? (
-                <>
-                  <CompactGameRow label="G3" value={game3} onChange={setGame3} />
-                  <GameSideboardEditor
-                    label="Game 3"
-                    state={sb3}
-                    onChange={setSb3}
-                    plans={filteredPlans}
-                    onApplyPlan={(planId) => applyPlanToGame(planId, setSb3)}
-                    sideboardCards={sideboardCards}
-                    mainDeckCards={mainDeckCards}
-                  />
-                </>
-              ) : null}
-            </View>
-          ) : null}
         </SectionCard>
 
         <SectionCard title="Mistakes">
           <TagPicker selected={mistakeTags} onChange={setMistakeTags} />
         </SectionCard>
 
-        <SectionCard title="Notes" inset>
+        <SectionCard title="Notes">
           <View>
             <FieldLabel>Note (optional)</FieldLabel>
             <TextField
@@ -569,6 +666,33 @@ export default function LogMatchScreen() {
             />
           </View>
         </SectionCard>
+
+        <CollapseSection title="Reflect" meta="Optional">
+          <View>
+            <Text style={styles.reflectLabel}>What went well</Text>
+            <TextField
+              value={wentWell}
+              onChangeText={setWentWell}
+              placeholder="Optional"
+            />
+          </View>
+          <View>
+            <Text style={styles.reflectLabel}>What to improve</Text>
+            <TextField
+              value={wentPoorly}
+              onChangeText={setWentPoorly}
+              placeholder="Optional"
+            />
+          </View>
+          <View>
+            <Text style={styles.reflectLabel}>One change next time</Text>
+            <TextField
+              value={nextTime}
+              onChangeText={setNextTime}
+              placeholder="Optional"
+            />
+          </View>
+        </CollapseSection>
 
         <View style={{ height: 16 }} />
       </ScrollView>
@@ -766,40 +890,12 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.screenPad,
-    gap: spacing.blockGap,
-    paddingBottom: 24,
-  },
-  dateRow: {
-    gap: 8,
-  },
-  dateBtn: {
-    minHeight: spacing.hitTarget,
-    borderRadius: 12,
-    backgroundColor: colors.inset,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-  },
-  dateText: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  donePicker: {
-    alignSelf: 'flex-end',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  donePickerText: {
-    color: colors.accent,
-    fontWeight: '700',
-    fontSize: 16,
+    gap: spacing.sectionGap,
   },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.chipGap,
   },
   selectedHint: {
     color: colors.textMuted,
@@ -850,10 +946,10 @@ const styles = StyleSheet.create({
   planChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.chipGap,
   },
   planChip: {
-    minHeight: 40,
+    minHeight: spacing.chipMinH,
     paddingHorizontal: 12,
     borderRadius: 20,
     backgroundColor: colors.chip,
@@ -872,6 +968,18 @@ const styles = StyleSheet.create({
   },
   planChipTextActive: {
     color: colors.accent,
+  },
+  optionalLabel: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  reflectLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 6,
   },
   fieldError: {
     color: colors.warning,

@@ -1,13 +1,13 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { showAlert } from '../../src/utils/alert';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useMatches } from '../../src/context/MatchContext';
 import { EmptyState } from '../../src/components/EmptyState';
@@ -17,7 +17,7 @@ import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { colors } from '../../src/theme/colors';
 import { elevation } from '../../src/theme/elevation';
 import { typography } from '../../src/theme/typography';
-import { spacing } from '../../src/theme/spacing';
+import { spacing, stickyContentInset } from '../../src/theme/spacing';
 import {
   formatPercent,
   winLossLabel,
@@ -63,7 +63,7 @@ export default function HomeScreen() {
   );
 
   const openSettings = () =>
-    Alert.alert(
+    showAlert(
       'Settings',
       'Local-only app — matches and sideboards stay on this device. No account or cloud sync.',
     );
@@ -80,6 +80,11 @@ export default function HomeScreen() {
   }
 
   const empty = matches.length === 0;
+  /** Filler copy only when Recent is empty (Designer QA) */
+  const showFeedFiller = recent.length === 0;
+  const feedFillerCopy = showFeedFiller
+    ? 'Log matches to fill your feed'
+    : null;
 
   return (
     <View style={styles.screen}>
@@ -111,7 +116,7 @@ export default function HomeScreen() {
         {empty ? (
           <EmptyState
             title="No matches yet"
-            message="Log your first match to build a feed of recent results and deck win rates."
+            message="Log a match to start your feed."
             icon="game-controller-outline"
           />
         ) : (
@@ -157,14 +162,12 @@ export default function HomeScreen() {
               )}
             </View>
 
-            {/* 2b. By opponent legend */}
-            <View style={styles.block}>
-              <Text style={styles.sectionLabel}>By opponent legend</Text>
-              {byOppLegend.length === 0 ? (
-                <Text style={styles.emptyHint}>
-                  Opponent legend stats appear after you log matches.
-                </Text>
-              ) : (
+            {/* 2b. More stats — opp legend + sideboard usage in one row */}
+            {(byOppLegend.length > 0 ||
+              bySideboard.sideboardUsed ||
+              bySideboard.g1OnlyOrBo1) && (
+              <View style={styles.block}>
+                <Text style={styles.sectionLabel}>More stats</Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -172,10 +175,10 @@ export default function HomeScreen() {
                 >
                   {byOppLegend.map((row) => (
                     <View
-                      key={row.label}
-                      style={[styles.deckChip, elevation.e1]}
+                      key={`opp-${row.label}`}
+                      style={[styles.moreChip, elevation.e1]}
                     >
-                      <Text style={styles.deckChipName} numberOfLines={1}>
+                      <Text style={styles.moreChipName}>
                         {row.label}
                       </Text>
                       <Text style={styles.deckChipPct}>
@@ -184,18 +187,12 @@ export default function HomeScreen() {
                       <Text style={styles.deckChipCount}>{row.count}</Text>
                     </View>
                   ))}
-                </ScrollView>
-              )}
-            </View>
-
-            {/* 2c. Sideboard used vs G1/Bo1 */}
-            {(bySideboard.sideboardUsed || bySideboard.g1OnlyOrBo1) ? (
-              <View style={styles.block}>
-                <Text style={styles.sectionLabel}>Sideboard usage</Text>
-                <View style={styles.sbUsageRow}>
                   {bySideboard.sideboardUsed ? (
-                    <View style={[styles.deckChip, elevation.e1]}>
-                      <Text style={styles.deckChipName} numberOfLines={1}>
+                    <View
+                      key="sb-used"
+                      style={[styles.moreChip, elevation.e1]}
+                    >
+                      <Text style={styles.moreChipName}>
                         {bySideboard.sideboardUsed.label}
                       </Text>
                       <Text style={styles.deckChipPct}>
@@ -207,8 +204,11 @@ export default function HomeScreen() {
                     </View>
                   ) : null}
                   {bySideboard.g1OnlyOrBo1 ? (
-                    <View style={[styles.deckChip, elevation.e1]}>
-                      <Text style={styles.deckChipName} numberOfLines={1}>
+                    <View
+                      key="sb-g1"
+                      style={[styles.moreChip, elevation.e1]}
+                    >
+                      <Text style={styles.moreChipName}>
                         {bySideboard.g1OnlyOrBo1.label}
                       </Text>
                       <Text style={styles.deckChipPct}>
@@ -219,9 +219,9 @@ export default function HomeScreen() {
                       </Text>
                     </View>
                   ) : null}
-                </View>
+                </ScrollView>
               </View>
-            ) : null}
+            )}
 
             {/* 3. Recent — primary feed (e0 flat MatchRows) */}
             <View style={styles.block}>
@@ -257,9 +257,17 @@ export default function HomeScreen() {
             </View>
           </>
         )}
+
+        {showFeedFiller ? (
+          <View style={styles.fillerWrap}>
+            {feedFillerCopy ? (
+              <Text style={styles.feedFiller}>{feedFillerCopy}</Text>
+            ) : null}
+          </View>
+        ) : null}
       </ScrollView>
 
-      {/* Thumb-zone CTA — flush with screen, no bar */}
+      {/* Thumb-zone CTA — flush with screen, no bar/border */}
       <View style={styles.footer}>
         <PrimaryButton
           label="Log match"
@@ -281,8 +289,8 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.screenPad,
-    gap: spacing.blockGap,
-    paddingBottom: 24,
+    gap: spacing.sectionGap,
+    paddingBottom: stickyContentInset(0),
     flexGrow: 1,
   },
   footer: {
@@ -302,7 +310,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: spacing.hitTarget,
-    marginBottom: 4,
   },
   headerLeft: {
     flex: 1,
@@ -317,7 +324,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.4,
   },
-  /** WR pill — accentSoft fill + accent text, no heavy shadow */
+  /** WR pill — % accent, record muted 12 */
   wrPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -325,7 +332,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 999,
+    borderRadius: 8,
   },
   wrPct: {
     color: colors.accent,
@@ -338,8 +345,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   block: {
-    gap: 8,
-    marginTop: 4,
+    gap: spacing.chipGap,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -361,20 +367,48 @@ const styles = StyleSheet.create({
     ...typography.body,
     lineHeight: 20,
   },
+  fillerWrap: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+    paddingVertical: 12,
+  },
+  feedFiller: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
   chipRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: spacing.chipGap,
     paddingVertical: 2,
     paddingRight: 8,
   },
   deckChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.chipGap,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    minHeight: spacing.chipMinH,
     borderRadius: 999,
     maxWidth: 220,
+  },
+  /** More stats — no maxWidth so labels like G1-only / Bo1 stay readable */
+  moreChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.chipGap,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: spacing.chipMinH,
+    borderRadius: 999,
+    flexShrink: 0,
+  },
+  moreChipName: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '600',
   },
   deckChipActive: {
     backgroundColor: colors.accentSoft,
@@ -386,7 +420,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flexShrink: 1,
   },
-  /** % as text — does not compete with accent CTA */
   deckChipPct: {
     color: colors.text,
     fontSize: 13,
@@ -396,11 +429,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontWeight: '600',
-  },
-  sbUsageRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
   },
   pressed: {
     opacity: 0.85,

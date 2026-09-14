@@ -76,10 +76,13 @@ export interface GameResult {
 }
 
 export interface MatchNote {
-  /** Legacy long fields — kept empty for new writes; preserved when migrating. */
+  /** Reflect: what went well (optional). */
   wentWell: string;
+  /** Reflect: what to improve (optional). Also receives migrated `mistakes` when empty. */
   wentPoorly: string;
+  /** Legacy free-text mistakes — prefer wentPoorly; preserved on disk until rewrite. */
   mistakes: string;
+  /** Reflect: one change next time (optional). */
   nextTime: string;
   /**
    * @deprecated Old taxonomy. Prefer mistakeTags.
@@ -88,7 +91,7 @@ export interface MatchNote {
   tags: NoteTag[];
   /** Primary anti-typing mistake chips. */
   mistakeTags: MistakeTag[];
-  /** Optional 1-line free-text note. */
+  /** Optional Notes one-liner — separate from Reflect fields. */
   oneLiner: string;
 }
 
@@ -163,18 +166,10 @@ export function normalizeMistakeTags(
   return out;
 }
 
-/** Prefer oneLiner; fall back to legacy free-text fields for display/migration. */
+/** Notes one-liner only — Reflect (wentWell/wentPoorly/nextTime) stays separate. */
 export function noteOneLiner(note: MatchNote | undefined | null): string {
   if (!note) return '';
-  const primary = (note.oneLiner ?? '').trim();
-  if (primary) return primary;
-  return (
-    note.nextTime?.trim() ||
-    note.wentPoorly?.trim() ||
-    note.mistakes?.trim() ||
-    note.wentWell?.trim() ||
-    ''
-  );
+  return (note.oneLiner ?? '').trim();
 }
 
 export function normalizeMatchNote(raw: Partial<MatchNote> | null | undefined): MatchNote {
@@ -182,7 +177,7 @@ export function normalizeMatchNote(raw: Partial<MatchNote> | null | undefined): 
   if (!raw || typeof raw !== 'object') return base;
 
   const mistakeTags = normalizeMistakeTags(raw.mistakeTags, raw.tags);
-  // Keep oneLiner as stored; noteOneLiner() falls back to legacy fields for UI.
+  // Keep oneLiner as stored (Notes); Reflect fields are separate.
   const oneLiner = typeof raw.oneLiner === 'string' ? raw.oneLiner.trim() : '';
 
   return {
@@ -199,17 +194,31 @@ export function normalizeMatchNote(raw: Partial<MatchNote> | null | undefined): 
 export function isNoteEmpty(note: MatchNote): boolean {
   return (
     !noteOneLiner(note) &&
-    !note.wentWell.trim() &&
-    !note.wentPoorly.trim() &&
+    !hasReflection(note) &&
     !note.mistakes.trim() &&
-    !note.nextTime.trim() &&
     note.mistakeTags.length === 0
   );
 }
 
+/** True when any Reflect prompt (wentWell / wentPoorly / nextTime) has text. */
+export function hasReflection(note: MatchNote | undefined | null): boolean {
+  if (!note) return false;
+  return Boolean(
+    note.wentWell?.trim() ||
+      note.wentPoorly?.trim() ||
+      note.nextTime?.trim(),
+  );
+}
+
 export function displayTitle(match: Match): string {
-  const own = normalizeDeckName(match.ownDeck) || 'Unknown';
-  const opp = normalizeDeckName(match.opponentDeck) || 'Unknown';
+  const own =
+    normalizeDeckName(match.ownDeck) ||
+    normalizeDeckName(match.ownLegend) ||
+    'Unknown';
+  const opp =
+    normalizeDeckName(match.opponentDeck) ||
+    normalizeDeckName(match.opponentLegend) ||
+    'Unknown';
   return `${own} vs ${opp}`;
 }
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { colors } from '../theme/colors';
 import { elevation } from '../theme/elevation';
+import { spacing } from '../theme/spacing';
 
 export function Chip({
   label,
@@ -60,7 +61,7 @@ export function Chip({
 
 const styles = StyleSheet.create({
   chip: {
-    minHeight: 36,
+    minHeight: spacing.chipMinH,
     paddingHorizontal: 12,
     borderRadius: 18,
     alignItems: 'center',

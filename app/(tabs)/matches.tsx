@@ -11,7 +11,7 @@ import { EmptyState } from '../../src/components/EmptyState';
 import { MatchRow } from '../../src/components/MatchRow';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { colors } from '../../src/theme/colors';
-import { spacing } from '../../src/theme/spacing';
+import { spacing, stickyContentInset } from '../../src/theme/spacing';
 
 export default function MatchesScreen() {
   const { matches } = useMatches();
@@ -25,6 +25,8 @@ export default function MatchesScreen() {
     }, [navigation]),
   );
 
+  const openLog = () => router.push('/match/log');
+
   return (
     <View style={styles.screen}>
       {matches.length === 0 ? (
@@ -32,27 +34,22 @@ export default function MatchesScreen() {
           <Text style={styles.headerTitle}>Matches</Text>
           <EmptyState
             title="No matches yet"
-            message="Track event and friendly games with decks, results, and post-match notes."
+            message="Log a match to track results."
             icon="game-controller-outline"
-            ctaLabel="Log match"
-            onPress={() => router.push('/match/log')}
           />
+
         </View>
       ) : (
         <>
           <View style={styles.top}>
             <Text style={styles.headerTitle}>Matches</Text>
-            <PrimaryButton
-              label="Log match"
-              onPress={() => router.push('/match/log')}
-              depth="e2"
-            />
           </View>
           <FlatList
             data={matches}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             showsVerticalScrollIndicator={false}
+            ListFooterComponent={null}
             renderItem={({ item }) => (
               <MatchRow
                 match={item}
@@ -63,6 +60,11 @@ export default function MatchesScreen() {
           />
         </>
       )}
+
+      {/* Sticky Log match — same flush pattern as Home (no top duplicate CTA) */}
+      <View style={styles.footer}>
+        <PrimaryButton label="Log match" onPress={openLog} depth="e2" />
+      </View>
     </View>
   );
 }
@@ -76,7 +78,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.screenPad,
     paddingTop: 4,
     paddingBottom: 4,
-    gap: spacing.blockGap,
   },
   headerTitle: {
     color: colors.text,
@@ -87,11 +88,32 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: spacing.screenPad,
     paddingTop: 4,
-    paddingBottom: 40,
+    paddingBottom: stickyContentInset(0),
+    flexGrow: 1,
   },
   emptyWrap: {
+    flex: 1,
     paddingHorizontal: spacing.screenPad,
     paddingTop: 4,
-    gap: spacing.blockGap,
+    gap: spacing.sectionGap,
+    paddingBottom: stickyContentInset(0),
+  },
+  fillerWrap: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+    paddingVertical: 12,
+  },
+  feedFiller: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  footer: {
+    paddingHorizontal: spacing.screenPad,
+    paddingTop: 8,
+    paddingBottom: 12,
+    backgroundColor: colors.background,
   },
 });

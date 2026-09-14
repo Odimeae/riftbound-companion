@@ -1,6 +1,8 @@
 import React from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { colors } from '../theme/colors';
+import { elevation } from '../theme/elevation';
+import { spacing } from '../theme/spacing';
 import { SectionLabel } from './SectionLabel';
 
 export function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -44,7 +46,10 @@ export function TextField({
   );
 }
 
-/** Flat form section — label + content, no nested card glow (P0) */
+/**
+ * e1 elevated form “sheet” — Match / Decks / Result / Mistakes / Notes.
+ * Optional inset = recessed notes-style panel inside a sheet.
+ */
 export function SectionCard({
   title,
   children,
@@ -56,7 +61,7 @@ export function SectionCard({
   inset?: boolean;
 }) {
   return (
-    <View style={[styles.section, inset && styles.sectionInset]}>
+    <View style={[styles.sheet, elevation.e1, inset && styles.sheetInset]}>
       {title ? <SectionLabel>{title}</SectionLabel> : null}
       <View style={styles.content}>{children}</View>
     </View>
@@ -77,7 +82,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     color: colors.text,
     fontSize: 16,
-    minHeight: 44,
+    minHeight: spacing.hitTarget,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
@@ -86,19 +91,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warningBg,
   },
   multiline: {
-    minHeight: 108, // ≥3 lines inset
+    minHeight: 108,
     paddingTop: 12,
   },
-  section: {
+  sheet: {
     gap: 10,
-    paddingVertical: 4,
-  },
-  sectionInset: {
-    backgroundColor: colors.inset,
-    borderRadius: 16,
+    borderRadius: spacing.radius,
     padding: 14,
-    borderWidth: 1,
-    borderColor: colors.hairline,
+  },
+  sheetInset: {
+    backgroundColor: colors.inset,
   },
   content: {
     gap: 14,

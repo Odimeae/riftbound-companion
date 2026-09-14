@@ -1,6 +1,5 @@
 import React, { useLayoutEffect, useState } from 'react';
 import {
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -8,6 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { showAlert } from '../../src/utils/alert';
 import { Stack, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useMatches } from '../../src/context/MatchContext';
@@ -21,10 +21,10 @@ import { IconButton } from '../../src/components/IconButton';
 import { colors } from '../../src/theme/colors';
 import { spacing } from '../../src/theme/spacing';
 import { typography } from '../../src/theme/typography';
+import { CollapseSection } from '../../src/components/CollapseSection';
 import {
   displayTitle,
   MISTAKE_TAG_LABELS,
-  noteOneLiner,
 } from '../../src/types/match';
 import { planTitle } from '../../src/types/sideboard';
 import { formatMatchDate } from '../../src/utils/stats';
@@ -75,7 +75,7 @@ export default function MatchDetailScreen() {
 
   const onDelete = () => {
     setMenuOpen(false);
-    Alert.alert(
+    showAlert(
       'Delete match?',
       'This permanently removes the match and its notes from this device.',
       [
@@ -242,16 +242,14 @@ export default function MatchDetailScreen() {
           </View>
         ) : null}
 
-        <View style={styles.block}>
-          <SectionLabel>Notes</SectionLabel>
-          {!noteOneLiner(match.note) ? (
-            <Text style={styles.subtle}>No notes</Text>
-          ) : (
+        {match.note.oneLiner?.trim() ? (
+          <View style={styles.block}>
+            <SectionLabel>Notes</SectionLabel>
             <View style={styles.notesInset}>
-              <NoteBlock label="Note" value={noteOneLiner(match.note)} />
+              <NoteBlock label="Note" value={match.note.oneLiner} />
             </View>
-          )}
-        </View>
+          </View>
+        ) : null}
 
         {match.note.mistakeTags.length > 0 ? (
           <View style={styles.block}>
@@ -263,6 +261,36 @@ export default function MatchDetailScreen() {
             </View>
           </View>
         ) : null}
+
+        {(() => {
+          const wentWell = (match.note.wentWell ?? '').trim();
+          const wentPoorly =
+            (match.note.wentPoorly ?? '').trim() ||
+            (match.note.mistakes ?? '').trim();
+          const nextTime = (match.note.nextTime ?? '').trim();
+          const filled =
+            Boolean(wentWell) || Boolean(wentPoorly) || Boolean(nextTime);
+          if (!filled) return null;
+          return (
+            <View style={styles.block}>
+              <CollapseSection
+                title="Reflect"
+                meta="Optional"
+                defaultExpanded
+              >
+                {wentWell ? (
+                  <NoteBlock label="What went well" value={wentWell} />
+                ) : null}
+                {wentPoorly ? (
+                  <NoteBlock label="What to improve" value={wentPoorly} />
+                ) : null}
+                {nextTime ? (
+                  <NoteBlock label="One change next time" value={nextTime} />
+                ) : null}
+              </CollapseSection>
+            </View>
+          );
+        })()}
 
         <View style={{ height: 28 }} />
       </ScrollView>

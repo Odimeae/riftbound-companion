@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { MatchProvider } from '../src/context/MatchContext';
 import { SideboardProvider } from '../src/context/SideboardContext';
+import { DeckProvider } from '../src/context/DeckContext';
 import { colors } from '../src/theme/colors';
 
 export default function RootLayout() {
@@ -13,6 +14,7 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <MatchProvider>
           <SideboardProvider>
+            <DeckProvider>
             <StatusBar style="light" />
             <Stack
               screenOptions={{
@@ -67,6 +69,7 @@ export default function RootLayout() {
                 }}
               />
             </Stack>
+            </DeckProvider>
           </SideboardProvider>
         </MatchProvider>
       </SafeAreaProvider>

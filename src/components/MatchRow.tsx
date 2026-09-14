@@ -39,8 +39,7 @@ function rowMistakeTags(match: Match): MistakeTag[] {
 }
 
 /**
- * Flat MatchRow — WlPill | `{deck} vs {opp}` / meta / notes / quiet tags / chevron.
- * Notes stay on their own italic line (never inlined into meta).
+ * Flat MatchRow — denser hierarchy: WlPill (~28, r8) | Title Case title / meta / notes / quiet tags.
  */
 export function MatchRow({
   match,
@@ -66,7 +65,7 @@ export function MatchRow({
       ]}
       accessibilityRole="button"
     >
-      <WlPill outcome={match.outcome} />
+      <WlPill outcome={match.outcome} size="sm" />
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={1}>
           {displayTitle(match)}
@@ -92,7 +91,7 @@ export function MatchRow({
           </View>
         ) : null}
       </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.inactive} />
+      <Ionicons name="chevron-forward" size={16} color={colors.inactive} />
     </Pressable>
   );
 }
@@ -101,11 +100,11 @@ const styles = StyleSheet.create({
   rowCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     backgroundColor: colors.surface,
     borderRadius: spacing.radius,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: spacing.rowPadV,
     borderWidth: 1,
     borderColor: colors.hairline,
     minHeight: spacing.rowMinH,
@@ -113,9 +112,9 @@ const styles = StyleSheet.create({
   rowFlat: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     backgroundColor: 'transparent',
-    paddingVertical: 12,
+    paddingVertical: spacing.rowPadV,
     paddingHorizontal: 0,
     minHeight: spacing.rowMinH,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -126,7 +125,7 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
-    gap: 2,
+    gap: 1,
   },
   title: {
     color: colors.text,
@@ -140,12 +139,12 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     ...typography.meta,
     fontStyle: 'italic',
-    marginTop: 2,
+    marginTop: 1,
   },
   tags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 8,
+    marginTop: 4,
   },
 });

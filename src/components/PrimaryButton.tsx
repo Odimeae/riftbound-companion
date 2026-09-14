@@ -20,31 +20,37 @@ export function PrimaryButton({
   variant?: 'primary' | 'danger' | 'ghost';
   depth?: 'e2';
 }) {
-  const bg =
-    variant === 'danger'
+  const isDisabled = Boolean(disabled || loading);
+  const bg = isDisabled
+    ? colors.elevated
+    : variant === 'danger'
       ? colors.danger
       : variant === 'ghost'
         ? colors.elevated
         : colors.accent;
-  const fg = variant === 'primary' ? colors.accentOn : colors.text;
+  const fg = isDisabled
+    ? colors.textMuted
+    : variant === 'primary'
+      ? colors.accentOn
+      : colors.text;
   const border =
-    variant === 'ghost'
+    variant === 'ghost' || isDisabled
       ? { borderWidth: 1 as const, borderColor: colors.hairline }
       : undefined;
 
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled || loading}
+      disabled={isDisabled}
       style={({ pressed }) => [
         styles.btn,
         { backgroundColor: bg },
         border,
-        depth === 'e2' && elevation.e2Shadow,
-        (disabled || loading) && styles.disabled,
-        pressed && styles.pressed,
+        depth === 'e2' && !isDisabled && elevation.e2Shadow,
+        pressed && !isDisabled && styles.pressed,
       ]}
       accessibilityRole="button"
+      accessibilityState={{ disabled: isDisabled }}
     >
       {loading ? (
         <ActivityIndicator color={fg} />
@@ -67,9 +73,6 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '700',
-  },
-  disabled: {
-    opacity: 0.5,
   },
   pressed: {
     opacity: 0.88,

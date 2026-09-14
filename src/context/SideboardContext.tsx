@@ -21,6 +21,7 @@ import {
   saveSideboards,
 } from '../storage/sideboard';
 import { deckLookupKey, normalizeDeckName } from '../utils/deckName';
+import { displayCardLabel, toCardRef } from '../utils/cardResolve';
 
 interface SideboardContextValue {
   sideboards: DeckSideboard[];
@@ -84,7 +85,9 @@ export function SideboardProvider({ children }: { children: React.ReactNode }) {
     async (deckName: string, cards: string[]) => {
       const trimmed = normalizeDeckName(deckName) || 'Untitled Deck';
       const existing = sideboards.find((s) => deckKey(s.deckName) === deckKey(trimmed));
-      const next = buildSideboard(trimmed, clampSideboardCards(cards), existing?.id);
+      const clamped = clampSideboardCards(cards).map((c) => displayCardLabel(c) || c);
+      const refs = clamped.map((c) => toCardRef(c, 1));
+      const next = buildSideboard(trimmed, clamped, existing?.id, refs);
       if (existing) {
         await persistSideboards(
           sideboards.map((s) => (s.id === existing.id ? next : s)),

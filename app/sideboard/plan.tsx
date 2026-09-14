@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { showAlert } from '../../src/utils/alert';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useSideboard } from '../../src/context/SideboardContext';
+import { useDecks } from '../../src/context/DeckContext';
 import { useMatches } from '../../src/context/MatchContext';
 import { FieldLabel, SectionCard, TextField } from '../../src/components/Field';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
@@ -31,6 +32,7 @@ export default function MatchupPlanScreen() {
   }>();
   const { getPlan, savePlan, getSideboardForDeck, deletePlan, plansForDeck } = useSideboard();
   const { matches } = useMatches();
+  const { mainPoolForDeck } = useDecks();
   const existing = id ? getPlan(id) : undefined;
   const isEdit = Boolean(existing);
 
@@ -62,6 +64,7 @@ export default function MatchupPlanScreen() {
 
   const mainDeckCards = useMemo(() => {
     const names: string[] = [];
+    names.push(...mainPoolForDeck(deckName));
     for (const plan of plansForDeck(deckName)) {
       if (existing && plan.id === existing.id) continue;
       for (const s of plan.swaps) {
@@ -73,16 +76,16 @@ export default function MatchupPlanScreen() {
     }
     names.push(...knownOutCardsFromMatches(matches, deckName));
     return names;
-  }, [deckName, plansForDeck, existing, swaps, matches]);
+  }, [deckName, plansForDeck, existing, swaps, matches, mainPoolForDeck]);
 
   const onSave = useCallback(async () => {
     const canonicalDeck = normalizeDeckName(deckName);
     if (!canonicalDeck) {
-      Alert.alert('Deck required', 'Enter the deck this plan belongs to.');
+      showAlert('Deck required', 'Enter the deck this plan belongs to.');
       return;
     }
     if (!vsLegend.trim() && !vsArchetype.trim()) {
-      Alert.alert(
+      showAlert(
         'Matchup required',
         'Enter an opponent legend and/or archetype.',
       );
@@ -94,19 +97,19 @@ export default function MatchupPlanScreen() {
         ((s.inCard ?? '').trim().length > 0 && (s.inCard ?? '').trim().length < 2),
     );
     if (hasJunk) {
-      Alert.alert('Card name too short', 'Card names need at least 2 characters.');
+      showAlert('Card name too short', 'Card names need at least 2 characters.');
       return;
     }
     const cleaned = normalizeSwaps(swaps);
     if (cleaned.length === 0) {
-      Alert.alert(
+      showAlert(
         'Add a swap',
         'Each swap needs both an OUT and an IN card (1-for-1).',
       );
       return;
     }
     if (cleaned.length > SIDEBOARD_MAX) {
-      Alert.alert('Too many swaps', `Maximum ${SIDEBOARD_MAX} 1-for-1 swaps.`);
+      showAlert('Too many swaps', `Maximum ${SIDEBOARD_MAX} 1-for-1 swaps.`);
       return;
     }
 
@@ -175,7 +178,7 @@ export default function MatchupPlanScreen() {
 
   const onDelete = () => {
     if (!existing) return;
-    Alert.alert('Delete plan?', 'This cannot be undone on this device.', [
+    showAlert('Delete plan?', 'This cannot be undone on this device.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',

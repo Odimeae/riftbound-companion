@@ -1,3 +1,4 @@
+import { CardRef } from './card';
 export const SIDEBOARD_MAX = 10;
 
 export type PlanFollowed = 'yes' | 'partial' | 'no' | 'no_plan';
@@ -24,7 +25,10 @@ export interface SideboardSwap {
 export interface DeckSideboard {
   id: string;
   deckName: string;
+  /** Display / legacy free-text slot names (max 10). */
   cards: string[];
+  /** Optional catalog refs (id + qty) — filled when names resolve. */
+  cardRefs?: CardRef[];
   updatedAt: string;
 }
 

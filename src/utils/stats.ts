@@ -203,3 +203,19 @@ export function formatShortDate(iso: string): string {
     year: 'numeric',
   });
 }
+
+/** Recent unique own legends (most recent first). */
+export function recentOwnLegends(matches: Match[], limit = 8): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const m of matches) {
+    const label = normalizeDeckName(m.ownLegend);
+    if (!label) continue;
+    const key = deckLookupKey(label);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+    if (out.length >= limit) break;
+  }
+  return out;
+}

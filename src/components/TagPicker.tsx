@@ -5,8 +5,10 @@ import {
   MISTAKE_TAG_LABELS,
   MistakeTag,
 } from '../types/match';
+import { spacing } from '../theme/spacing';
 import { Chip } from './Chip';
 
+/** Mistake tags — primary Chip (accent when selected), not quiet. */
 export function TagPicker({
   selected,
   onChange,
@@ -42,6 +44,6 @@ const styles = StyleSheet.create({
   wrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: spacing.chipGap,
   },
 });

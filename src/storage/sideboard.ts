@@ -50,10 +50,12 @@ function normalizeSideboard(s: Partial<DeckSideboard>): DeckSideboard {
   const cards = clampSideboardCards(
     Array.isArray(s.cards) ? s.cards.map(String) : [],
   );
+  const cardRefs = Array.isArray(s.cardRefs) ? s.cardRefs : undefined;
   return {
     id: s.id || createId(),
     deckName: normalizeDeckName(s.deckName ?? '') || 'Untitled Deck',
     cards,
+    ...(cardRefs ? { cardRefs } : {}),
     updatedAt: s.updatedAt || new Date().toISOString(),
   };
 }
@@ -79,11 +81,13 @@ export function buildSideboard(
   deckName: string,
   cards: string[],
   existingId?: string,
+  cardRefs?: DeckSideboard['cardRefs'],
 ): DeckSideboard {
   return {
     id: existingId || createId(),
     deckName: normalizeDeckName(deckName) || 'Untitled Deck',
     cards: clampSideboardCards(cards),
+    ...(cardRefs ? { cardRefs } : {}),
     updatedAt: new Date().toISOString(),
   };
 }
