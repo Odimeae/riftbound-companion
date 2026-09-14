@@ -484,9 +484,8 @@ export default function SideboardScreen() {
               ))}
             </View>
           ) : (
-            <Text style={styles.hint}>
-              Log a match to unlock deck chips. Sideboard stays keyed to the
-              selected deck name.
+            <Text style={styles.hint} numberOfLines={1}>
+              Log a match to unlock deck chips.
             </Text>
           )}
         </View>
@@ -499,6 +498,16 @@ export default function SideboardScreen() {
 
         {tab === 'Slots' ? (
           <View style={styles.block}>
+            <Pressable
+              onPress={() => setImportOpen(true)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Import deck"
+              style={styles.quietLink}
+            >
+              <Text style={styles.quietLinkText}>Import deck</Text>
+            </Pressable>
+
             <View style={styles.slots}>
               {Array.from({ length: SIDEBOARD_MAX }).map((_, index) => {
                 const slotName = cards[index];
@@ -530,15 +539,6 @@ export default function SideboardScreen() {
                 );
               })}
             </View>
-
-            <Pressable
-              onPress={() => setImportOpen(true)}
-              hitSlop={8}
-              accessibilityRole="button"
-              style={styles.quietLink}
-            >
-              <Text style={styles.quietLinkText}>Import deck</Text>
-            </Pressable>
 
             {linkedDeck && autoEnriching ? (
               <Text style={styles.linkMeta}>Resolving names…</Text>
@@ -665,9 +665,7 @@ export default function SideboardScreen() {
               autoCapitalize="none"
             />
             <Text style={styles.hint}>
-              Paste a Piltover Archive share link or raw deck code. Lists stay
-              on this device — no Piltover login. Uses the selected deck chip
-              name when linking.
+              Piltover URL or deck code · stays on this device.
             </Text>
             <View style={styles.importActions}>
               <PrimaryButton
@@ -831,8 +829,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   quietLink: {
-    alignItems: 'center',
-    paddingVertical: 10,
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingBottom: 2,
   },
   quietLinkText: {
     color: colors.textSecondary,

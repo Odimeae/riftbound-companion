@@ -101,7 +101,12 @@ export function SlotTile({
           ) : null}
         </>
       ) : (
-        <Text style={styles.placeholder}>Empty</Text>
+        <>
+          <Text style={styles.placeholder}>Empty</Text>
+          <Text style={styles.addHint} accessibilityElementsHidden importantForAccessibility="no">
+            +
+          </Text>
+        </>
       )}
     </View>
   );
@@ -187,6 +192,13 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.inactive,
     ...typography.body,
+  },
+  addHint: {
+    color: colors.inactive,
+    fontSize: 20,
+    fontWeight: '400',
+    lineHeight: 24,
+    paddingHorizontal: 6,
   },
   clearHit: {
     width: 36,
