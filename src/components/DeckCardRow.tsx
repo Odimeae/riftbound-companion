@@ -65,7 +65,7 @@ export function DeckCardRow({
         size={spacing.artThumb}
         uri={uri}
         name={artName}
-        state={uri ? 'ready' : 'placeholder'}
+        state={uri ? 'ready' : unresolved ? 'loading' : 'placeholder'}
         warn={fuzzy}
       />
       <View style={styles.textCol}>

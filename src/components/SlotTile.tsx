@@ -68,7 +68,13 @@ export function SlotTile({
     (codeValue ? paCdnArtUrl(codeValue) : undefined) ||
     (entry?.code ? paCdnArtUrl(entry.code) : undefined) ||
     null;
-  const artState = uri ? ('ready' as const) : filled ? ('placeholder' as const) : ('missing' as const);
+  const artState = uri
+    ? ('ready' as const)
+    : unresolved
+      ? ('loading' as const)
+      : filled
+        ? ('placeholder' as const)
+        : ('missing' as const);
 
   const content = (
     <View

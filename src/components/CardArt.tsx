@@ -44,9 +44,21 @@ export function CardArt({
   const pulse = useRef(new Animated.Value(0.45)).current;
 
   const hasUri = Boolean(uri && !imgFailed);
+  const trimmedName = (name ?? '').trim();
+  // Code-only / unresolved → quiet pulse, never a collector-number monogram.
+  const unresolvedCode = Boolean(trimmedName && isCardCodeToken(trimmedName) && !hasUri);
+  const inferred: CardArtState = hasUri
+    ? 'ready'
+    : unresolvedCode
+      ? 'loading'
+      : trimmedName
+        ? 'placeholder'
+        : 'missing';
+  // Honor explicit state, but if art failed on a set code, stay on quiet pulse.
   const state: CardArtState =
-    stateProp ??
-    (hasUri ? 'ready' : name.trim() ? 'placeholder' : 'missing');
+    unresolvedCode && (stateProp === 'ready' || stateProp === 'placeholder')
+      ? 'loading'
+      : (stateProp ?? inferred);
 
   useEffect(() => {
     setImgFailed(false);
@@ -131,21 +143,16 @@ export function CardArt({
 
 /**
  * 2–3 char monogram for placeholder art.
- * Real names → initials. Codes → set/number fragment (e.g. OGN-166 → 166), never `01`.
+ * Real names → initials from words. Card codes → empty (never collector numbers
+ * like 166 / 214 as hero text on compact thumbs — Soft QA P0).
  */
 export function makeMonogram(name: string): string {
   const cleaned = (name ?? '').trim();
   if (!cleaned) return '';
 
+  // Unresolved set codes must not become big center labels (VEN-166 → "166").
   if (isCardCodeToken(cleaned)) {
-    const dash = cleaned.indexOf('-');
-    const set = cleaned.slice(0, dash);
-    const rest = cleaned.slice(dash + 1).replace(/[^A-Za-z0-9]/g, '');
-    if (/\d/.test(rest)) {
-      return rest.slice(0, 3).toUpperCase();
-    }
-    if (set.length >= 2) return set.slice(0, 3).toUpperCase();
-    return (set + rest).slice(0, 3).toUpperCase();
+    return '';
   }
 
   // Prefer initials of first 2–3 words (spaces / underscores only — not hyphens in names)
@@ -156,10 +163,15 @@ export function makeMonogram(name: string): string {
       .map((w) => w[0])
       .join('')
       .toUpperCase();
-    return letters.slice(0, 3);
+    const out = letters.slice(0, 3);
+    // Never show a pure numeric fragment as a monogram.
+    if (/^\d+$/.test(out)) return '';
+    return out;
   }
   const alnum = cleaned.replace(/[^A-Za-z0-9]/g, '');
-  return alnum.slice(0, 3).toUpperCase();
+  const out = alnum.slice(0, 3).toUpperCase();
+  if (/^\d+$/.test(out)) return '';
+  return out;
 }
 
 const styles = StyleSheet.create({

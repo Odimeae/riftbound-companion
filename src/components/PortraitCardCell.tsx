@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Image,
   Pressable,
   StyleSheet,
@@ -7,12 +8,14 @@ import {
   View,
 } from 'react-native';
 import { colors } from '../theme/colors';
+import { isCardCodeToken } from '../utils/deckName';
 import { makeMonogram } from './CardArt';
 
 /**
  * Style A portrait grid cell (2:3) — sideboard 5×2 / main 8-col.
- * Filled: cover art (or monogram). Empty: dashed + muted +.
- * Press ring: 2px accent. No slot numbers.
+ * Filled: cover art, or name monogram, or quiet pulse while unresolved.
+ * Empty: dashed + muted +. Press ring: 2px accent. No slot numbers.
+ * Soft QA P0: never show raw collector numbers (166, 214…) as hero text.
  */
 export function PortraitCardCell({
   name,
@@ -31,16 +34,43 @@ export function PortraitCardCell({
   accessibilityLabel?: string;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
+  const pulse = useRef(new Animated.Value(0.45)).current;
+
   useEffect(() => {
     setImgFailed(false);
   }, [imageUrl]);
 
-  const filled = !empty && Boolean(name?.trim());
+  const trimmed = name?.trim() || '';
+  const filled = !empty && Boolean(trimmed);
   const uri = imageUrl && imageUrl.trim() && !imgFailed ? imageUrl.trim() : null;
-  const monogram = useMemo(
-    () => makeMonogram(name?.trim() || ''),
-    [name],
-  );
+  const codeOnly = Boolean(trimmed && isCardCodeToken(trimmed));
+  const monogram = useMemo(() => {
+    if (codeOnly) return '';
+    return makeMonogram(trimmed);
+  }, [trimmed, codeOnly]);
+
+  // Unresolved set code (or no usable monogram) → quiet pulse, not a number label.
+  const showPulse = filled && !uri && (codeOnly || !monogram);
+
+  useEffect(() => {
+    if (!showPulse) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0.4,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [showPulse, pulse]);
 
   const body = (
     <View
@@ -58,10 +88,15 @@ export function PortraitCardCell({
             resizeMode="cover"
             onError={() => setImgFailed(true)}
           />
+        ) : showPulse ? (
+          <Animated.View
+            style={[styles.placeholder, { opacity: pulse }]}
+            accessibilityLabel="Resolving card"
+          />
         ) : (
           <View style={styles.placeholder}>
             <Text style={styles.monogram} numberOfLines={1}>
-              {monogram || '?'}
+              {monogram}
             </Text>
           </View>
         )

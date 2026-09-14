@@ -166,7 +166,13 @@ export function CardPicker({
                   size={spacing.artPicker}
                   uri={artUri}
                   name={primary}
-                  state={artUri ? 'ready' : 'placeholder'}
+                  state={
+                    artUri
+                      ? 'ready'
+                      : isCardCodeToken(String(primary).trim())
+                        ? 'loading'
+                        : 'placeholder'
+                  }
                   qty={qty}
                   warn={fuzzy}
                 />

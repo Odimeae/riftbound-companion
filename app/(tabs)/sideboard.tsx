@@ -685,7 +685,12 @@ export default function SideboardScreen() {
 
             <View style={styles.sectionHead}>
               <Text style={styles.sectionLab}>Main deck</Text>
-              <Text style={styles.sectionCount}>
+              <Text
+                style={[
+                  styles.sectionCount,
+                  mainCount > 40 && styles.sectionCountWarn,
+                ]}
+              >
                 {mainCount}/40
               </Text>
             </View>
@@ -1064,6 +1069,9 @@ const styles = StyleSheet.create({
     color: colors.win,
     fontSize: 12,
     fontWeight: '600',
+  },
+  sectionCountWarn: {
+    color: colors.warning,
   },
   sbGrid: {
     gap: 5,
