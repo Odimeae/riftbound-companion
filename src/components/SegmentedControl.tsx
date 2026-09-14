@@ -3,6 +3,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 
+/**
+ * Style A e1 segmented control — active label = accent text.
+ */
 export function SegmentedControl<T extends string>({
   options,
   value,
@@ -61,6 +64,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   labelActive: {
-    color: colors.text,
+    color: colors.accent,
   },
 });
