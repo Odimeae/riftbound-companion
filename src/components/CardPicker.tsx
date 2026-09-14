@@ -35,6 +35,8 @@ export type CardPickerOptionMeta = {
   qty?: number;
   /** Fuzzy catalog match */
   fuzzy?: boolean;
+  /** Set code when option label is already a display name */
+  code?: string | null;
 };
 
 /**
@@ -119,11 +121,32 @@ export function CardPicker({
             const key = deckLookupKey(name);
             const active = selectedKey === key && Boolean(selectedKey);
             const meta = optionMeta?.[key];
-            const entry = resolveCardQuery(name);
+            const codeHint =
+              (meta?.code && String(meta.code).trim()) ||
+              (isCardCodeToken(name.trim()) ? name.trim() : undefined);
+            const entry =
+              resolveCardQuery(codeHint || name) || resolveCardQuery(name);
+            const primary =
+              entry?.name ||
+              (!isCardCodeToken(name.trim())
+                ? displayCardLabel(name)
+                : name);
+            const codeValue =
+              (entry?.code && entry.code.trim()) || codeHint || undefined;
             const uri = entry?.imageUrl ?? null;
             const fuzzy = Boolean(meta?.fuzzy);
             const qty = meta?.qty;
             const poolLabel = meta?.pool;
+            const artUri =
+              uri ||
+              meta?.imageUrl ||
+              (codeValue ? paCdnArtUrl(codeValue) : undefined) ||
+              null;
+            const metaBits = fuzzy
+              ? 'Matched ≈'
+              : [poolLabel, typeof qty === 'number' ? `×${qty}` : null, codeValue]
+                  .filter(Boolean)
+                  .join(' · ') || ' ';
             return (
               <Pressable
                 key={key}
@@ -141,18 +164,9 @@ export function CardPicker({
                 {fuzzy ? <View style={styles.fuzzyBar} /> : null}
                 <CardArt
                   size={spacing.artPicker}
-                  uri={
-                    uri ||
-                    meta?.imageUrl ||
-                    (isCardCodeToken(name) ? paCdnArtUrl(name) : undefined) ||
-                    null
-                  }
-                  name={name}
-                  state={
-                    uri || meta?.imageUrl || isCardCodeToken(name)
-                      ? 'ready'
-                      : 'placeholder'
-                  }
+                  uri={artUri}
+                  name={primary}
+                  state={artUri ? 'ready' : 'placeholder'}
                   qty={qty}
                   warn={fuzzy}
                 />
@@ -161,14 +175,10 @@ export function CardPicker({
                     style={[styles.rowName, active && styles.rowNameActive]}
                     numberOfLines={1}
                   >
-                    {name}
+                    {primary}
                   </Text>
                   <Text style={styles.rowMeta} numberOfLines={1}>
-                    {fuzzy
-                      ? 'Matched ≈'
-                      : [poolLabel, typeof qty === 'number' ? `×${qty}` : null]
-                          .filter(Boolean)
-                          .join(' · ') || ' '}
+                    {metaBits}
                   </Text>
                 </View>
               </Pressable>

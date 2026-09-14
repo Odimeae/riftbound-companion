@@ -19,8 +19,7 @@ import { FieldLabel, TextField } from '../../src/components/Field';
 import { CardPicker, CardPickerOptionMeta } from '../../src/components/CardPicker';
 import { PrimaryButton } from '../../src/components/PrimaryButton';
 import { EmptyState } from '../../src/components/EmptyState';
-import { SlotTile } from '../../src/components/SlotTile';
-import { SectionLabel } from '../../src/components/SectionLabel';
+import { PortraitCardCell } from '../../src/components/PortraitCardCell';
 import { Chip } from '../../src/components/Chip';
 import { SegmentedControl } from '../../src/components/SegmentedControl';
 import { colors } from '../../src/theme/colors';
@@ -31,7 +30,11 @@ import {
   planSubtitle,
   planTitle,
 } from '../../src/types/sideboard';
-import { deckLookupKey, normalizeDeckName } from '../../src/utils/deckName';
+import {
+  deckLookupKey,
+  isCardCodeToken,
+  normalizeDeckName,
+} from '../../src/utils/deckName';
 import {
   countNamedEntries,
   deckNeedsNameEnrich,
@@ -39,7 +42,7 @@ import {
   paCdnArtUrl,
   remapSlotLabels,
 } from '../../src/utils/piltoverImport';
-import { isFuzzyMatch } from '../../src/utils/cardResolve';
+import { displayCardLabel, isFuzzyMatch } from '../../src/utils/cardResolve';
 
 const SIDEBOARD_TABS = ['Slots', 'Plans'] as const;
 type SideboardTab = (typeof SIDEBOARD_TABS)[number];
@@ -128,15 +131,29 @@ export default function SideboardScreen() {
     setHydrated(true);
   }, [deckSuggestions, hydrated]);
 
+  const linkedDeck = getDeckForName(deckName);
+
   useEffect(() => {
     const existing = getSideboardForDeck(deckName);
-    setCards(existing?.cards ?? []);
-  }, [deckName, getSideboardForDeck]);
+    let next = existing?.cards ?? [];
+    const deck = getDeckForName(deckName);
+    if (deck && next.length) {
+      const remapped = remapSlotLabels(next, [
+        ...deck.sideboardCards,
+        ...deck.mainCards,
+      ]);
+      if (remapped.some((v, i) => v !== next[i])) {
+        next = remapped;
+        void upsertSideboardCards(normalizeDeckName(deckName), remapped);
+      }
+    }
+    setCards(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deckName, getSideboardForDeck, getDeckForName, linkedDeck?.id, linkedDeck?.updatedAt]);
 
   const plans = plansForDeck(deckName);
   const atMax = cards.length >= SIDEBOARD_MAX;
   const deckLabel = normalizeDeckName(deckName) || 'Deck';
-  const linkedDeck = getDeckForName(deckName);
 
   /** Designer P1: Compare only when plan linked AND actual swaps exist. */
   const compareTargetForPlan = (planId: string) => {
@@ -171,12 +188,25 @@ export default function SideboardScreen() {
     const push = (raw: string) => {
       const n = normalizeDeckName(raw);
       if (!n || n.length < 2) return;
-      map.set(deckLookupKey(n), n);
+      const key = deckLookupKey(n);
+      const prev = map.get(key);
+      // Prefer a real display name over a bare set code for the same key.
+      if (prev && isCardCodeToken(n) && !isCardCodeToken(prev)) return;
+      if (prev && !isCardCodeToken(n) && isCardCodeToken(prev)) {
+        map.set(key, n);
+        return;
+      }
+      if (!prev) map.set(key, n);
     };
     for (const c of knownSbCards) push(c);
     if (linkedDeck) {
-      for (const c of linkedDeck.mainCards) push(c.name);
-      for (const c of linkedDeck.sideboardCards) push(c.name);
+      for (const c of [...linkedDeck.mainCards, ...linkedDeck.sideboardCards]) {
+        push(c.name);
+        // Drop code-only aliases once we have a real title for that card.
+        if (c.code && c.name && !isCardCodeToken(c.name.trim())) {
+          map.delete(deckLookupKey(c.code));
+        }
+      }
     }
     return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
   }, [knownSbCards, linkedDeck]);
@@ -184,26 +214,32 @@ export default function SideboardScreen() {
   const pickerOptionMeta = useMemo(() => {
     const meta: Record<string, CardPickerOptionMeta> = {};
     if (!linkedDeck) return meta;
-    for (const c of linkedDeck.mainCards) {
+    const put = (
+      c: { name: string; code?: string; imageUrl?: string | null; qty: number },
+      pool: 'Main' | 'SB',
+    ) => {
       const key = deckLookupKey(c.name);
-      if (!key) continue;
+      if (!key) return;
+      const code =
+        (c.code && c.code.trim()) ||
+        (isCardCodeToken(c.name.trim()) ? c.name.trim() : undefined);
       meta[key] = {
-        imageUrl: c.imageUrl || (c.code ? paCdnArtUrl(c.code) : undefined),
-        pool: 'Main',
+        imageUrl: c.imageUrl || (code ? paCdnArtUrl(code) : undefined),
+        pool,
         qty: c.qty,
-        fuzzy: isFuzzyMatch(c.code || c.name),
+        fuzzy: isFuzzyMatch(code || c.name),
+        code,
       };
-    }
-    for (const c of linkedDeck.sideboardCards) {
-      const key = deckLookupKey(c.name);
-      if (!key) continue;
-      meta[key] = {
-        imageUrl: c.imageUrl || (c.code ? paCdnArtUrl(c.code) : undefined),
-        pool: 'SB',
-        qty: c.qty,
-        fuzzy: isFuzzyMatch(c.code || c.name),
-      };
-    }
+      // Also index by code so code-keyed options resolve meta.
+      if (code) {
+        const ck = deckLookupKey(code);
+        if (ck && !meta[ck]) {
+          meta[ck] = meta[key];
+        }
+      }
+    };
+    for (const c of linkedDeck.mainCards) put(c, 'Main');
+    for (const c of linkedDeck.sideboardCards) put(c, 'SB');
     return meta;
   }, [linkedDeck]);
 
@@ -269,6 +305,93 @@ export default function SideboardScreen() {
     }
   };
 
+  /** Resolve display label + art for a stored slot / deck entry. */
+  const resolveEntryVisual = (raw: string) => {
+    const slotName = (raw || '').trim();
+    if (!slotName) {
+      return { label: '', code: undefined as string | undefined, imageUrl: null as string | null };
+    }
+    const fromList = [
+      ...(linkedDeck?.sideboardCards ?? []),
+      ...(linkedDeck?.mainCards ?? []),
+    ].find(
+      (c) =>
+        deckLookupKey(c.name) === deckLookupKey(slotName) ||
+        (c.code && deckLookupKey(c.code) === deckLookupKey(slotName)),
+    );
+    const code =
+      (fromList?.code && fromList.code.trim()) ||
+      (isCardCodeToken(slotName) ? slotName : undefined);
+    const label =
+      fromList?.name && !isCardCodeToken(fromList.name.trim())
+        ? fromList.name
+        : displayCardLabel(slotName) || slotName;
+    const imageUrl =
+      fromList?.imageUrl ||
+      (code ? paCdnArtUrl(code) : undefined) ||
+      (isCardCodeToken(slotName) ? paCdnArtUrl(slotName) : undefined) ||
+      null;
+    return { label, code, imageUrl };
+  };
+
+  /** Expand main deck entries into per-copy cells for the 8-col grid. */
+  const mainGridCells = useMemo(() => {
+    const cells: {
+      key: string;
+      label: string;
+      code?: string;
+      imageUrl?: string | null;
+      entryName: string;
+    }[] = [];
+    if (!linkedDeck) return cells;
+    let i = 0;
+    for (const c of linkedDeck.mainCards) {
+      const code =
+        (c.code && c.code.trim()) ||
+        (isCardCodeToken(c.name.trim()) ? c.name.trim() : undefined);
+      const label =
+        c.name && !isCardCodeToken(c.name.trim())
+          ? c.name
+          : displayCardLabel(c.name) || c.name;
+      const imageUrl =
+        c.imageUrl || (code ? paCdnArtUrl(code) : undefined) || null;
+      const copies = Math.max(1, c.qty || 1);
+      for (let q = 0; q < copies; q++) {
+        cells.push({
+          key: `main-${i}-${q}-${deckLookupKey(c.name || code || String(i))}`,
+          label,
+          code,
+          imageUrl,
+          entryName: label,
+        });
+      }
+      i += 1;
+    }
+    return cells;
+  }, [linkedDeck]);
+
+  const mainCount = linkedDeck ? mainCardCount(linkedDeck.mainCards) : 0;
+
+  const addFromMain = async (rawLabel: string) => {
+    const name = normalizeDeckName(rawLabel);
+    if (!name || name.length < 2) return;
+    if (atMax) {
+      showAlert('Sideboard full', `Maximum ${SIDEBOARD_MAX} cards.`);
+      return;
+    }
+    if (cards.some((c) => deckLookupKey(c) === deckLookupKey(name))) {
+      return;
+    }
+    const next = [...cards, name];
+    setCards(next);
+    setSaving(true);
+    try {
+      await upsertSideboardCards(normalizeDeckName(deckName), next);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const onSaveSideboard = async () => {
     const canonical = normalizeDeckName(deckName);
     if (!canonical) {
@@ -276,9 +399,17 @@ export default function SideboardScreen() {
       return;
     }
     setDeckName(canonical);
+    const toSave =
+      linkedDeck && cards.length
+        ? remapSlotLabels(cards, [
+            ...linkedDeck.sideboardCards,
+            ...linkedDeck.mainCards,
+          ])
+        : cards;
+    if (toSave.some((v, i) => v !== cards[i])) setCards(toSave);
     setSaving(true);
     try {
-      await upsertSideboardCards(canonical, cards);
+      await upsertSideboardCards(canonical, toSave);
     } finally {
       setSaving(false);
     }
@@ -465,13 +596,10 @@ export default function SideboardScreen() {
       >
         <View style={styles.header}>
           <Text style={styles.screenTitle}>Sideboard</Text>
-          <Text style={styles.headerMeta}>
-            {cards.length}/{SIDEBOARD_MAX} slots · {deckLabel}
-          </Text>
+          <Text style={styles.headerMeta}>{deckLabel}</Text>
         </View>
 
         <View style={styles.block}>
-          <SectionLabel>Deck switch</SectionLabel>
           {deckSuggestions.length > 0 ? (
             <View style={styles.chipRow}>
               {deckSuggestions.map((name) => (
@@ -505,40 +633,116 @@ export default function SideboardScreen() {
               accessibilityLabel="Import deck"
               style={styles.quietLink}
             >
-              <Text style={styles.quietLinkText}>Import deck</Text>
+              <Text style={styles.importLinkText}>Import deck</Text>
             </Pressable>
 
-            <View style={styles.slots}>
-              {Array.from({ length: SIDEBOARD_MAX }).map((_, index) => {
-                const slotName = cards[index];
-                const fromList = slotName
-                  ? [
-                      ...(linkedDeck?.sideboardCards ?? []),
-                      ...(linkedDeck?.mainCards ?? []),
-                    ].find(
-                      (c) =>
-                        deckLookupKey(c.name) === deckLookupKey(slotName) ||
-                        (c.code &&
-                          deckLookupKey(c.code) === deckLookupKey(slotName)),
-                    )
-                  : undefined;
-                const slotArt =
-                  fromList?.imageUrl ||
-                  (fromList?.code ? paCdnArtUrl(fromList.code) : undefined) ||
-                  (slotName ? paCdnArtUrl(slotName) : undefined);
-                return (
-                  <SlotTile
-                    key={`slot-${index}`}
-                    index={index}
-                    name={slotName}
-                    imageUrl={slotArt}
-                    fuzzy={slotName ? isFuzzyMatch(slotName) : false}
-                    onPress={() => openSlotPicker(index)}
-                    onClear={slotName ? () => removeCard(index) : undefined}
-                  />
-                );
-              })}
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionLab}>Sideboard</Text>
+              <Text style={styles.sectionCount}>
+                {cards.length}/{SIDEBOARD_MAX}
+              </Text>
             </View>
+
+            <View style={styles.sbGrid}>
+              {[0, 1].map((row) => (
+                <View key={`sb-row-${row}`} style={styles.sbRow}>
+                  {Array.from({ length: 5 }).map((_, col) => {
+                    const index = row * 5 + col;
+                    const slotName = cards[index];
+                    const filled = Boolean(slotName?.trim());
+                    const visual = filled
+                      ? resolveEntryVisual(slotName!)
+                      : { label: '', imageUrl: null };
+                    return (
+                      <View key={`slot-${index}`} style={styles.gridFlex}>
+                        <PortraitCardCell
+                          empty={!filled}
+                          name={visual.label || undefined}
+                          imageUrl={visual.imageUrl}
+                          onPress={
+                            filled
+                              ? () => {
+                                  void removeCard(index);
+                                }
+                              : () => openSlotPicker(index)
+                          }
+                          accessibilityLabel={
+                            filled
+                              ? `Remove ${visual.label}`
+                              : `Empty slot — pick a card`
+                          }
+                        />
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+
+            <Text style={styles.gridHint}>
+              Tap a main card to fill the next empty slot.
+            </Text>
+
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionLab}>Main deck</Text>
+              <Text style={styles.sectionCount}>
+                {mainCount}/40
+              </Text>
+            </View>
+
+            {linkedDeck && mainGridCells.length > 0 ? (
+              <View style={styles.mainGrid}>
+                {Array.from({
+                  length: Math.ceil(mainGridCells.length / 8),
+                }).map((_, row) => (
+                  <View key={`main-row-${row}`} style={styles.mainRow}>
+                    {mainGridCells
+                      .slice(row * 8, row * 8 + 8)
+                      .map((cell) => {
+                        const inSb = cards.some(
+                          (c) =>
+                            deckLookupKey(c) ===
+                              deckLookupKey(cell.entryName) ||
+                            (cell.code &&
+                              deckLookupKey(c) ===
+                                deckLookupKey(cell.code)),
+                        );
+                        return (
+                          <View key={cell.key} style={styles.gridFlex}>
+                            <PortraitCardCell
+                              name={cell.label}
+                              imageUrl={cell.imageUrl}
+                              selected={inSb}
+                              onPress={() => {
+                                void addFromMain(cell.entryName);
+                              }}
+                              accessibilityLabel={`Add ${cell.label} to sideboard`}
+                            />
+                          </View>
+                        );
+                      })}
+                    {/* Pad short last row so cell widths stay even */}
+                    {mainGridCells.slice(row * 8, row * 8 + 8).length < 8
+                      ? Array.from({
+                          length:
+                            8 -
+                            mainGridCells.slice(row * 8, row * 8 + 8)
+                              .length,
+                        }).map((__, pad) => (
+                          <View
+                            key={`pad-${row}-${pad}`}
+                            style={styles.gridFlex}
+                          />
+                        ))
+                      : null}
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.hint}>
+                Import a deck to show the main pool here.
+              </Text>
+            )}
 
             {linkedDeck && autoEnriching ? (
               <Text style={styles.linkMeta}>Resolving names…</Text>
@@ -837,6 +1041,53 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 14,
     fontWeight: '600',
+  },
+  importLinkText: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  sectionLab: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  sectionCount: {
+    color: colors.win,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sbGrid: {
+    gap: 5,
+  },
+  sbRow: {
+    flexDirection: 'row',
+    gap: 5,
+  },
+  mainGrid: {
+    gap: 4,
+  },
+  mainRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  gridFlex: {
+    flex: 1,
+    minWidth: 0,
+  },
+  gridHint: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+    marginBottom: 4,
   },
   actions: {
     gap: spacing.chipGap,

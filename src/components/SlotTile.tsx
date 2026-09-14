@@ -12,7 +12,7 @@ import { paCdnArtUrl } from '../utils/piltoverImport';
 
 /**
  * Sideboard slot 01–10.
- * Filled: leading 48 art (placeholder monogram until Riot uri) + name + trailing X.
+ * Filled: leading 48 art + display name primary + muted code secondary + trailing X.
  * Empty: dashed row, no art.
  */
 export function SlotTile({
@@ -22,6 +22,7 @@ export function SlotTile({
   onClear,
   fuzzy,
   imageUrl: imageUrlProp,
+  code: codeProp,
 }: {
   /** 0-based index; displayed as 01–10 */
   index: number;
@@ -32,24 +33,42 @@ export function SlotTile({
   fuzzy?: boolean;
   /** Interim PA / Riot art */
   imageUrl?: string | null;
+  /** Optional set code (e.g. VEN-131) when `name` is already a display title */
+  code?: string | null;
 }) {
   const filled = Boolean(name?.trim());
   const label = String(index + 1).padStart(2, '0');
-  const entry = filled ? resolveCardQuery(name!) : undefined;
   const raw = filled ? name!.trim() : '';
-  const unresolved = filled && !entry?.name && isCardCodeToken(raw);
-  const display = filled
-    ? unresolved
-      ? raw
-      : entry?.name || displayCardLabel(name!)
-    : '';
+  const codeHint =
+    (codeProp && codeProp.trim()) ||
+    (raw && isCardCodeToken(raw) ? raw : undefined);
+
+  const entry = filled
+    ? resolveCardQuery(codeHint || raw) || resolveCardQuery(raw)
+    : undefined;
+
+  // Prefer catalog / real title; never keep a bare set code as the primary
+  // label when a display name is available (from catalog or non-code `name`).
+  const resolvedLabel = entry?.name
+    ? entry.name
+    : raw && !isCardCodeToken(raw)
+      ? displayCardLabel(raw)
+      : undefined;
+
+  const unresolved = filled && !resolvedLabel;
+  const display = unresolved ? codeHint || raw : resolvedLabel!;
+  const codeValue =
+    (entry?.code && entry.code.trim()) ||
+    codeHint ||
+    undefined;
+
   const uri =
     (imageUrlProp && imageUrlProp.trim()) ||
     entry?.imageUrl ||
-    (isCardCodeToken(raw) ? paCdnArtUrl(raw) : undefined) ||
+    (codeValue ? paCdnArtUrl(codeValue) : undefined) ||
     (entry?.code ? paCdnArtUrl(entry.code) : undefined) ||
     null;
-  const artState = uri ? 'ready' as const : filled ? 'placeholder' as const : 'missing' as const;
+  const artState = uri ? ('ready' as const) : filled ? ('placeholder' as const) : ('missing' as const);
 
   const content = (
     <View
@@ -82,9 +101,9 @@ export function SlotTile({
               <Text style={styles.meta} numberOfLines={1}>
                 Matched ≈
               </Text>
-            ) : entry?.code ? (
+            ) : codeValue ? (
               <Text style={styles.metaQuiet} numberOfLines={1}>
-                {entry.code}
+                {codeValue}
               </Text>
             ) : null}
           </View>
