@@ -2,9 +2,17 @@ import React from 'react';
 import { StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../src/theme/colors';
 
+/** Icon + label content row (excludes home-indicator inset). */
+const TAB_BAR_CONTENT_HEIGHT = 56;
+
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  // Always keep a little pad on devices with no inset (desktop web).
+  const bottomPad = Math.max(insets.bottom, 8);
+
   return (
     <Tabs
       screenOptions={{
@@ -15,11 +23,12 @@ export default function TabsLayout() {
         // Default: no header actions on any tab (prevents Home settings leaking)
         headerRight: () => null,
         tabBarStyle: {
+          // Solid surface so home-indicator inset is filled (not black gap)
           backgroundColor: colors.surface,
           borderTopColor: colors.hairline,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: 64,
-          paddingBottom: 8,
+          height: TAB_BAR_CONTENT_HEIGHT + bottomPad,
+          paddingBottom: bottomPad,
           paddingTop: 6,
         },
         tabBarActiveTintColor: colors.accent,

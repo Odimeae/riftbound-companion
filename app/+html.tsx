@@ -18,7 +18,7 @@ export default function Root({ children }: PropsWithChildren) {
           name="viewport"
           content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
         />
-        <meta name="theme-color" content="#0B1220" />
+        <meta name="theme-color" content="#090A0F" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Riftbound Companion" />
@@ -32,13 +32,18 @@ export default function Root({ children }: PropsWithChildren) {
   );
 }
 
+/** Rift Night background; viewport-fit=cover enables env(safe-area-inset-*). */
 const rootCss = `
 html, body, #root {
   height: 100%;
-  background-color: #0B1220;
+  background-color: #090A0F;
 }
 body {
   margin: 0;
   overflow: hidden;
+  /* Ensure PWA paints into home-indicator region with dark base */
+  padding: 0;
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
 }
 `;
