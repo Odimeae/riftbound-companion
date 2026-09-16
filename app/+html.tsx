@@ -34,14 +34,18 @@ export default function Root({ children }: PropsWithChildren) {
 
 /** Rift Night background; viewport-fit=cover enables env(safe-area-inset-*). */
 const rootCss = `
-html, body, #root {
+html, body {
   height: 100%;
   background-color: #090A0F;
+}
+/* App shell: residual strip under the tab bar matches charcoal surface */
+#root {
+  height: 100%;
+  background-color: #13141C;
 }
 body {
   margin: 0;
   overflow: hidden;
-  /* Ensure PWA paints into home-indicator region with dark base */
   padding: 0;
   min-height: 100dvh;
   min-height: -webkit-fill-available;
