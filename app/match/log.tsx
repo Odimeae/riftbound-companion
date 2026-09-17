@@ -444,8 +444,14 @@ export default function LogMatchScreen() {
         </SectionCard>
 
         <SectionCard title="Legends">
-          <View>
-            <FieldLabel>Your legend</FieldLabel>
+          <View
+            style={[
+              styles.legendGroup,
+              ownLegendMissing && styles.legendGroupEmpty,
+              showOwnLegendNudge && styles.legendGroupWarn,
+            ]}
+          >
+            <FieldLabel required>Your legend</FieldLabel>
             {recentMyLegends.length > 0 ? (
               <View style={styles.chipRow}>
                 {recentMyLegends.map((legend) => {
@@ -493,7 +499,7 @@ export default function LogMatchScreen() {
                     setOwnLegend(t);
                     setOwnLegendOther(true);
                   }}
-                  placeholder="Required"
+                  placeholder="Your legend"
                   invalid={showOwnLegendNudge}
                   onBlur={() => {
                     setOwnLegendTouched(true);
@@ -503,16 +509,27 @@ export default function LogMatchScreen() {
               </View>
             ) : ownLegend ? (
               <Text style={styles.selectedHint}>Selected: {ownLegend}</Text>
-            ) : (
-              <Text style={styles.selectedHint}>Pick a legend or Other…</Text>
-            )}
-            {showOwnLegendNudge ? (
-              <Text style={styles.fieldError}>Legend is required</Text>
+            ) : null}
+            {ownLegendMissing ? (
+              <Text
+                style={[
+                  styles.requiredHelper,
+                  showOwnLegendNudge && styles.fieldError,
+                ]}
+              >
+                Pick your legend to save
+              </Text>
             ) : null}
           </View>
 
-          <View>
-            <FieldLabel>Opponent legend</FieldLabel>
+          <View
+            style={[
+              styles.legendGroup,
+              oppLegendMissing && styles.legendGroupEmpty,
+              showOppLegendNudge && styles.legendGroupWarn,
+            ]}
+          >
+            <FieldLabel required>Opponent legend</FieldLabel>
             {recentOppLegends.length > 0 ? (
               <View style={styles.chipRow}>
                 {recentOppLegends.map((legend) => {
@@ -561,7 +578,7 @@ export default function LogMatchScreen() {
                     setOpponentLegend(t);
                     setOpponentLegendOther(true);
                   }}
-                  placeholder="Required"
+                  placeholder="Opponent legend"
                   invalid={showOppLegendNudge}
                   onBlur={() => {
                     setOppLegendTouched(true);
@@ -571,11 +588,16 @@ export default function LogMatchScreen() {
               </View>
             ) : opponentLegend ? (
               <Text style={styles.selectedHint}>Selected: {opponentLegend}</Text>
-            ) : (
-              <Text style={styles.selectedHint}>Pick a legend or Other…</Text>
-            )}
-            {showOppLegendNudge ? (
-              <Text style={styles.fieldError}>Legend is required</Text>
+            ) : null}
+            {oppLegendMissing ? (
+              <Text
+                style={[
+                  styles.requiredHelper,
+                  showOppLegendNudge && styles.fieldError,
+                ]}
+              >
+                Pick opponent legend to save
+              </Text>
             ) : null}
           </View>
 
@@ -968,6 +990,27 @@ const styles = StyleSheet.create({
   },
   planChipTextActive: {
     color: colors.accent,
+  },
+  legendGroup: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    padding: 10,
+    marginHorizontal: -10,
+  },
+  legendGroupEmpty: {
+    borderColor: 'rgba(167, 139, 250, 0.4)',
+    backgroundColor: colors.accentSoft,
+  },
+  legendGroupWarn: {
+    borderColor: colors.warning,
+    backgroundColor: colors.warningBg,
+  },
+  requiredHelper: {
+    color: colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 8,
   },
   optionalLabel: {
     color: colors.textMuted,

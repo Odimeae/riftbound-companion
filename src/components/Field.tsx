@@ -5,8 +5,20 @@ import { elevation } from '../theme/elevation';
 import { spacing } from '../theme/spacing';
 import { SectionLabel } from './SectionLabel';
 
-export function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.label}>{children}</Text>;
+export function FieldLabel({
+  children,
+  required,
+}: {
+  children: React.ReactNode;
+  /** Shows muted accent "Required" suffix for gated fields */
+  required?: boolean;
+}) {
+  return (
+    <View style={styles.labelRow}>
+      <Text style={styles.label}>{children}</Text>
+      {required ? <Text style={styles.requiredBadge}>Required</Text> : null}
+    </View>
+  );
 }
 
 export function TextField({
@@ -69,11 +81,24 @@ export function SectionCard({
 }
 
 const styles = StyleSheet.create({
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
   label: {
     color: colors.textSecondary,
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
+  },
+  requiredBadge: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    opacity: 0.85,
   },
   input: {
     backgroundColor: colors.inset,
